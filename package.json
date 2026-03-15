@@ -1,0 +1,63 @@
+{
+  "name": "story-studio",
+  "version": "0.1.0",
+  "description": "YouTube kids' story video generator — Electron + React desktop app",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run vite\" \"wait-on http://localhost:5173 && npm run electron\"",
+    "vite": "vite",
+    "electron": "electron .",
+    "build": "vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.17.19",
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1",
+    "electron-store": "^8.1.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "form-data": "^4.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "uuid": "^9.0.1",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "vite": "^5.0.12",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.storystudio.app",
+    "productName": "Story Studio",
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "extraResources": [
+      {
+        "from": "resources/",
+        "to": "resources/",
+        "filter": ["**/*"]
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ]
+  }
+}

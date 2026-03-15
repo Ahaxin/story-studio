@@ -1,0 +1,41 @@
+# Secrets / API keys
+.env
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# User story projects (generated content)
+projects/
+
+# Voice samples (personal recordings)
+voices/
+
+# Python XTTS virtual environment (large, install via requirements.txt)
+resources/xtts_venv/
+
+# Downloaded FFmpeg binaries (download from gyan.dev)
+resources/ffmpeg.exe
+resources/ffprobe.exe
+resources/ffmpeg-*/
+resources/ffmpeg-*.zip
+
+# Downloaded Piper binaries (download from github.com/rhasspy/piper)
+resources/piper.exe
+resources/piper/
+resources/piper_windows_amd64/
+resources/piper_windows_amd64.zip
+
+# Electron store (user settings — contains API keys)
+*.store.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.log

@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(taskkill:*)",
+      "Bash(netstat:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(node:*)",
+      "Read(//c/Users/Xin Chang/AppData/Roaming/story-studio/voices//**)",
+      "Read(//c/Users/Xin Chang/AppData/Roaming/story-studio/**)",
+      "Bash(\"/f/PROJECTS/story-studio/resources/ffprobe.exe\":*)",
+      "Bash(curl:*)",
+      "Bash(\"/f/PROJECTS/story-studio/resources/xtts_venv/Scripts/python.exe\":*)",
+      "Bash(\"/f/PROJECTS/story-studio/resources/xtts_venv/Scripts/pip.exe\" install:*)",
+      "Bash(\"/f/PROJECTS/story-studio/resources/xtts_venv/Scripts/pip.exe\" show:*)",
+      "Bash(cat:*)",
+      "Bash(python3:*)",
+      "Skill(claude-md-management:revise-claude-md)",
+      "Bash(F:/PROJECTS/story-studio/resources/xtts_venv/Scripts/pip show:*)",
+      "Bash(python:*)",
+      "Bash(resources/ffprobe.exe:*)",
+      "Bash(resources/ffmpeg.exe:*)",
+      "Bash(F:/PROJECTS/story-studio/resources/xtts_venv/Scripts/python.exe:*)",
+      "Bash(F:/PROJECTS/story-studio/resources/ffmpeg.exe:*)",
+      "Bash(gh auth:*)",
+      "Bash(where gh:*)",
+      "Bash(git config:*)"
+    ]
+  }
+}

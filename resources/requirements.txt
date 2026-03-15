@@ -1,0 +1,21 @@
+# Story Studio — XTTS v2 voice cloning dependencies
+# Install into a virtual environment:
+#
+#   python -m venv resources/xtts_venv
+#   resources/xtts_venv/Scripts/activate
+#   pip install -r resources/requirements.txt
+#
+# GPU (NVIDIA CUDA) — faster synthesis, recommended:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+#
+# CPU only — slower (~30s per paragraph):
+#   pip install torch torchaudio
+
+TTS>=0.22.0
+flask>=3.0.0
+transformers==4.39.3
+huggingface_hub==0.21.4
+tokenizers==0.15.2
+
+# torch and torchaudio must be installed separately (see above comments)
+# to choose between CUDA and CPU-only builds.
