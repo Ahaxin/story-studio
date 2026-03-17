@@ -85,16 +85,20 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
   }
 
   const MIN = 5, MAX = 15
-  const returned = parsed.scenes.length
-  const warned = Math.abs(returned - sceneCount) > 2
 
   // Clamp to valid range
   const scenes = parsed.scenes
     .slice(0, MAX)
     .filter(s => s && typeof s.text === 'string' && s.text.trim())
+    .map(s => ({
+      text: s.text.trim(),
+      illustrationPrompt: typeof s.illustrationPrompt === 'string' ? s.illustrationPrompt.trim() : '',
+    }))
+
+  const warned = Math.abs(scenes.length - sceneCount) > 2
 
   if (scenes.length < MIN) {
-    const err = new Error(`Model returned only ${returned} scenes (minimum is ${MIN}). Try again.`)
+    const err = new Error(`Model returned only ${scenes.length} scenes (minimum is ${MIN}). Try again.`)
     err.rawResponse = raw
     throw err
   }
