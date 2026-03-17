@@ -123,6 +123,7 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - Never use localStorage — use electron-store
 - All resource paths: use `app.isPackaged` to switch between dev and production paths
 - All utils are CommonJS (`require`) — do NOT convert to ESM
+- Commit without asking for confirmation — user prefers Claude to commit directly
 
 ## Build Commands
 - `npm run dev` — Vite + Electron dev mode (starts XTTS server automatically)
@@ -131,6 +132,7 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - Restart only Electron: `cmd //c "taskkill /IM electron.exe /F"` then `npm run electron`
 - Kill all Python (XTTS): `cmd //c "taskkill /IM python.exe /F"`
 - Check XTTS port: `cmd //c "netstat -ano | findstr :5002"`
+- Editing files in `src/utils/` requires full Electron restart — Node require() cache persists until process exits; Vite hot reload does NOT flush main process modules
 
 ## Piper Model Files Needed
 - `resources/piper/models/nl_NL-mls-medium.onnx` + `.onnx.json`
@@ -201,6 +203,13 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - `audioBust` state in SceneEditor forces audio element remount after narration regeneration
 - FFmpeg path resolved inline (no `getFfmpegPath()` function — does not exist)
 - Top-level requires in main.js: `os`, `axios`, `FormData` (form-data npm package)
+
+## LM Studio Integration (added 2026-03-17)
+- Utility: `src/utils/lmStudio.js` — checkLmStudioStatus / generateStory / generateIllustrationPrompt
+- IPC channels: `lmstudio:status`, `lmstudio:generate-story`, `lmstudio:generate-prompt`
+- Timeout: 300s for story gen — local LLMs are slow; axios `timeout` is total request duration
+- Thinking/reasoning models (Qwen, DeepSeek-R1, etc.) prefix JSON output with reasoning text — always extract JSON by finding first `{` ... last `}`, not by assuming it starts at position 0
+- useLmStudioStatus: staleTime: Infinity — manual-only refresh via Recheck button; no polling
 
 ## Next Steps / Known Improvements
 - Configure Daughter 2 profile (name, voice engine, voiceId)
