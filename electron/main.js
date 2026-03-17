@@ -634,7 +634,7 @@ ipcMain.handle('lmstudio:generate-story', async (event, { idea, language, sceneC
     const result = await generateStory({ idea, language, sceneCount })
     return { success: true, data: result }
   } catch (err) {
-    return { success: false, error: err.message }
+    return { success: false, error: err.message, rawResponse: err.rawResponse }
   }
 })
 

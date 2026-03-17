@@ -330,7 +330,11 @@ export function useGenerateStory() {
   return useMutation({
     mutationFn: async ({ idea, language, sceneCount }) => {
       const res = await api.lmStudioGenerateStory({ idea, language, sceneCount })
-      if (!res.success) throw new Error(res.error)
+      if (!res.success) {
+        const err = new Error(res.error)
+        err.rawResponse = res.rawResponse
+        throw err
+      }
       return res.data  // { scenes: [{text, illustrationPrompt}], warned }
     },
   })
