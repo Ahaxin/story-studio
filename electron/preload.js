@@ -45,4 +45,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   characterList:   ()     => ipcRenderer.invoke('character:list'),
   characterAdd:    (args) => ipcRenderer.invoke('character:add', args),
   characterRemove: (args) => ipcRenderer.invoke('character:remove', args),
+
+  // LM Studio (local LLM)
+  lmStudioStatus:          ()     => ipcRenderer.invoke('lmstudio:status'),
+  lmStudioGenerateStory:   (args) => ipcRenderer.invoke('lmstudio:generate-story', args),
+  lmStudioGeneratePrompt:  (args) => ipcRenderer.invoke('lmstudio:generate-prompt', args),
 })

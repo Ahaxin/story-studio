@@ -1,13 +1,14 @@
 // Settings.jsx — API keys, daughter voice profiles, Piper model paths, XTTS setup.
 
 import React, { useState, useEffect } from 'react'
-import { useSettings, useSaveSettings, useXttsStatus, useUploadCharacterReference, useElevenLabsCloneVoice, useCharacterList, useAddCharacter, useRemoveCharacter } from '../hooks/useIPC'
+import { useSettings, useSaveSettings, useXttsStatus, useUploadCharacterReference, useElevenLabsCloneVoice, useCharacterList, useAddCharacter, useRemoveCharacter, useLmStudioStatus } from '../hooks/useIPC'
 import VoiceRecorder from '../components/VoiceRecorder'
 
 export default function Settings() {
   const { data: settings, isLoading } = useSettings()
   const saveSetting = useSaveSettings()
   const { data: xttsData } = useXttsStatus()
+  const { data: lmStudioData } = useLmStudioStatus()
 
   const [nanoBananaKey, setNanoBananaKey] = useState('')
   const [elevenLabsKey, setElevenLabsKey] = useState('')
@@ -76,6 +77,9 @@ export default function Settings() {
 
         {/* XTTS server status banner */}
         <XttsStatusBanner status={xttsStatus} />
+
+        {/* LM Studio status banner */}
+        <LmStudioStatusBanner data={lmStudioData} />
 
         {/* API Keys */}
         <Section title="🔑 API Keys">
@@ -563,6 +567,45 @@ function CharacterCard({ character, onRemove, isRemoving }) {
       >
         ×
       </button>
+    </div>
+  )
+}
+
+// ── LM Studio status banner ───────────────────────────────────────────────────
+
+function LmStudioStatusBanner({ data }) {
+  // data is undefined while loading — show nothing until first poll resolves
+  if (!data) return null
+
+  if (data.online) {
+    return (
+      <div className="border rounded-xl px-4 py-3 flex items-start gap-2 bg-green-50 border-green-200">
+        <span className="text-sm mt-0.5">🤖</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-green-800">
+            LM Studio is running
+            {data.modelId ? ` · ${data.modelId}` : ' · no model loaded'}
+          </p>
+          <p className="text-xs text-green-600 mt-0.5">
+            {data.modelId
+              ? 'Write for Me is ready — open New Story to generate a story with AI.'
+              : 'Load a model in LM Studio to enable Write for Me.'}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border rounded-xl px-4 py-3 flex items-start gap-2 bg-gray-50 border-gray-200">
+      <span className="text-sm mt-0.5">🤖</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-gray-600">LM Studio is offline</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Start LM Studio and load a model to enable the Write for Me feature.
+          Download from <span className="font-mono">lmstudio.ai</span>
+        </p>
+      </div>
     </div>
   )
 }

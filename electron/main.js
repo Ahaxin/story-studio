@@ -99,9 +99,14 @@ ipcMain.handle('story:create', async (event, { name, language, scenes }) => {
     // Attach pre-split scenes — run through createScene() to ensure UUIDs + all fields
     if (scenes && Array.isArray(scenes)) {
       const { createScene } = require('../src/utils/schema')
-      project.scenes = scenes.map((s, i) =>
-        createScene(i, s.text, s.narrator || 'daughter1', s.transition || 'page-curl')
-      )
+      project.scenes = scenes.map((s, i) => {
+        const scene = createScene(i, s.text, s.narrator || 'daughter1', s.transition || 'page-curl')
+        // Preserve AI-generated illustrationPrompt if provided (from Write for Me flow)
+        if (s.illustrationPrompt && typeof s.illustrationPrompt === 'string' && s.illustrationPrompt.trim()) {
+          scene.illustrationPrompt = s.illustrationPrompt.trim()
+        }
+        return scene
+      })
     }
 
     const projectDir = path.join(PROJECTS_DIR, project.id)
@@ -604,6 +609,41 @@ ipcMain.handle('settings:set', async (event, { key, value }) => {
   try {
     store.set(key, value)
     return { success: true }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// ─── LM Studio IPC Handlers ───────────────────────────────────────────────────
+
+// lmstudio:status — check whether LM Studio is running and a model is loaded
+ipcMain.handle('lmstudio:status', async () => {
+  try {
+    const { checkLmStudioStatus } = require('../src/utils/lmStudio')
+    const result = await checkLmStudioStatus()
+    return { success: true, data: result }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// lmstudio:generate-story — generate story scenes from an idea using local LLM
+ipcMain.handle('lmstudio:generate-story', async (event, { idea, language, sceneCount }) => {
+  try {
+    const { generateStory } = require('../src/utils/lmStudio')
+    const result = await generateStory({ idea, language, sceneCount })
+    return { success: true, data: result }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// lmstudio:generate-prompt — generate a single illustration prompt for a scene
+ipcMain.handle('lmstudio:generate-prompt', async (event, { sceneText, language, storyTitle, illustrationStyle }) => {
+  try {
+    const { generateIllustrationPrompt } = require('../src/utils/lmStudio')
+    const prompt = await generateIllustrationPrompt({ sceneText, language, storyTitle, illustrationStyle })
+    return { success: true, data: prompt }
   } catch (err) {
     return { success: false, error: err.message }
   }

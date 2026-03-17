@@ -308,3 +308,41 @@ export function useRemoveCharacter() {
     },
   })
 }
+
+// ── LM Studio hooks ───────────────────────────────────────────────────────────
+
+/** Poll LM Studio status every 5s — { online: boolean, modelId: string|null } */
+export function useLmStudioStatus() {
+  return useQuery({
+    queryKey: ['lmstudio-status'],
+    queryFn: async () => {
+      const res = await api.lmStudioStatus()
+      if (!res.success) throw new Error(res.error)
+      return res.data  // { online, modelId }
+    },
+    refetchInterval: 5000,
+    retry: false,
+  })
+}
+
+/** Generate a full story (scenes + illustration prompts) from an idea via LM Studio. */
+export function useGenerateStory() {
+  return useMutation({
+    mutationFn: async ({ idea, language, sceneCount }) => {
+      const res = await api.lmStudioGenerateStory({ idea, language, sceneCount })
+      if (!res.success) throw new Error(res.error)
+      return res.data  // { scenes: [{text, illustrationPrompt}], warned }
+    },
+  })
+}
+
+/** Generate a single illustration prompt for a scene via LM Studio. */
+export function useGeneratePrompt() {
+  return useMutation({
+    mutationFn: async ({ sceneText, language, storyTitle, illustrationStyle }) => {
+      const res = await api.lmStudioGeneratePrompt({ sceneText, language, storyTitle, illustrationStyle })
+      if (!res.success) throw new Error(res.error)
+      return res.data  // string
+    },
+  })
+}

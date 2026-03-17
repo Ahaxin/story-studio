@@ -7,6 +7,7 @@ import {
   useGenerateNarration,
   useUpdateScene,
   useSaveSceneRecording,
+  useGeneratePrompt,
 } from '../hooks/useIPC'
 
 const TRANSITIONS = [
@@ -22,6 +23,7 @@ export default function SceneEditor() {
   const genNarration = useGenerateNarration()
   const saveRecording = useSaveSceneRecording()
   const updateSceneMutation = useUpdateScene()
+  const generatePrompt = useGeneratePrompt()
   const [audioBust, setAudioBust] = useState(0)
   const [recordingBust, setRecordingBust] = useState(0)
   const [illustrationBust, setIllustrationBust] = useState(0)
@@ -116,6 +118,23 @@ export default function SceneEditor() {
   }
 
 
+  async function handleAiPrompt() {
+    if (!scene) return
+    generatePrompt.reset()
+    try {
+      const prompt = await generatePrompt.mutateAsync({
+        sceneText: scene.text,
+        language: currentProject.language,
+        storyTitle: currentProject.name,
+        illustrationStyle: currentProject.style.illustrationStyle || 'watercolor children\'s book',
+      })
+      setLocalPrompt(prompt)
+      setPromptDirty(true)
+    } catch (_) {
+      // Error shown inline via generatePrompt.isError
+    }
+  }
+
   if (!scene) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-300">
@@ -197,19 +216,32 @@ export default function SceneEditor() {
                 Illustration Prompt
                 {promptDirty && <span className="ml-2 font-normal normal-case text-story-yellow">saving…</span>}
               </label>
-              {localPrompt && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setLocalPrompt('')
-                    setPromptDirty(true)
-                  }}
-                  className="text-xs text-gray-400 hover:text-red-400 transition-colors"
-                  title="Clear prompt — next generate will auto-build"
+                  onClick={handleAiPrompt}
+                  disabled={generatePrompt.isPending}
+                  className="text-xs font-bold text-story-purple hover:text-story-purple-dark disabled:opacity-40 transition-colors"
+                  title="Generate illustration prompt with AI (LM Studio)"
                 >
-                  Reset
+                  {generatePrompt.isPending ? '⏳' : '✨ AI'}
                 </button>
-              )}
+                {localPrompt && (
+                  <button
+                    onClick={() => {
+                      setLocalPrompt('')
+                      setPromptDirty(true)
+                    }}
+                    className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+                    title="Clear prompt — next generate will auto-build"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
+            {generatePrompt.isError && (
+              <p className="text-xs text-red-500">{generatePrompt.error?.message}</p>
+            )}
             <textarea
               value={localPrompt}
               onChange={e => { setLocalPrompt(e.target.value); setPromptDirty(true) }}

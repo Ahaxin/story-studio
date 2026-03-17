@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import useStore from '../store/useStore'
-import { useCreateProject } from '../hooks/useIPC'
+import { useCreateProject, useGenerateStory, useLmStudioStatus } from '../hooks/useIPC'
 
 // storySplitter runs in renderer just for preview — actual write happens via IPC
 function splitPreview(text) {
@@ -16,18 +16,31 @@ function splitPreview(text) {
 export default function NewStoryModal() {
   const { closeNewStoryModal } = useStore()
   const createProject = useCreateProject()
+  const generateStory = useGenerateStory()
+  const { data: lmStudioData } = useLmStudioStatus()
 
-  const [step, setStep] = useState(1)   // 1 = info, 2 = text + split preview
+  const [step, setStep] = useState(1)           // 1 = info, 2 = text/AI
+  const [tab, setTab] = useState('paste')        // 'paste' | 'ai'
   const [name, setName] = useState('')
   const nameInputRef = useRef(null)
   const textareaRef = useRef(null)
   const [language, setLanguage] = useState('nl-NL')
   const [narrator, setNarrator] = useState('daughter1')
+
+  // Paste tab state
   const [storyText, setStoryText] = useState('')
-  const [splitResult, setSplitResult] = useState(null)
+  const [splitResult, setSplitResult] = useState(null)   // array of strings
   const [splitError, setSplitError] = useState('')
+
+  // Write for Me tab state
+  const [idea, setIdea] = useState('')
+  const [sceneCount, setSceneCount] = useState(8)
+  const [aiResult, setAiResult] = useState(null)         // { scenes: [{text, illustrationPrompt}], warned }
+  const [aiError, setAiError] = useState('')
+
   const [error, setError] = useState('')
 
+  // ── Paste tab: split ──────────────────────────────────────────────────────
   function handleSplit() {
     setSplitError('')
     const paragraphs = splitPreview(storyText)
@@ -44,18 +57,40 @@ export default function NewStoryModal() {
     setSplitResult(paragraphs)
   }
 
+  // ── AI tab: generate ──────────────────────────────────────────────────────
+  async function handleGenerate() {
+    setAiError('')
+    setAiResult(null)
+    generateStory.reset()
+    try {
+      const result = await generateStory.mutateAsync({ idea: idea.trim(), language, sceneCount })
+      setAiResult(result)
+    } catch (err) {
+      setAiError(err.message)
+    }
+  }
+
+  // ── Create project ────────────────────────────────────────────────────────
   async function handleCreate() {
-    if (!splitResult) return
     setError('')
 
+    let rawScenes   // array of { text, illustrationPrompt? }
+    if (tab === 'paste') {
+      if (!splitResult) return
+      rawScenes = splitResult.map(text => ({ text, illustrationPrompt: '' }))
+    } else {
+      if (!aiResult) return
+      rawScenes = aiResult.scenes
+    }
+
     // Prepend a dedicated cover scene (index 0) using the story title.
-    // Story paragraphs follow as scenes 1..N. Only the cover (index 0) gets cover-style illustration.
-    const coverScene = { text: name.trim(), index: 0, narrator, transition: 'zoom' }
-    const storyScenes = splitResult.map((text, i) => ({
-      text,
+    const coverScene = { text: name.trim(), index: 0, narrator, transition: 'zoom', illustrationPrompt: '' }
+    const storyScenes = rawScenes.map((s, i) => ({
+      text: s.text,
+      illustrationPrompt: s.illustrationPrompt || '',
       index: i + 1,
       narrator,
-      transition: i === splitResult.length - 1 ? 'fade' : 'page-curl',
+      transition: i === rawScenes.length - 1 ? 'fade' : 'page-curl',
     }))
     const scenes = [coverScene, ...storyScenes]
 
@@ -67,22 +102,28 @@ export default function NewStoryModal() {
     }
   }
 
-  // Electron on Windows doesn't reliably honour autoFocus — force focus via ref
+  // ── Focus management ──────────────────────────────────────────────────────
   useEffect(() => {
     const timer = setTimeout(() => nameInputRef.current?.focus(), 50)
     return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
-    if (step === 2) {
+    if (step === 2 && tab === 'paste') {
       const timer = setTimeout(() => textareaRef.current?.focus(), 50)
       return () => clearTimeout(timer)
     }
-  }, [step])
+  }, [step, tab])
 
-  const estimatedSecs = splitResult ? splitResult.length * 8 : 0
-  const estimatedMin = Math.floor(estimatedSecs / 60)
-  const estimatedSec = estimatedSecs % 60
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const pasteSceneCount = splitResult ? splitResult.length : 0
+  const aiSceneCount    = aiResult    ? aiResult.scenes.length : 0
+  const activeCount     = tab === 'paste' ? pasteSceneCount : aiSceneCount
+  const estimatedSecs   = activeCount * 8
+  const estimatedMin    = Math.floor(estimatedSecs / 60)
+  const estimatedSec    = estimatedSecs % 60
+  const canCreate       = tab === 'paste' ? !!splitResult : !!aiResult
+  const lmOnline        = lmStudioData?.online && lmStudioData?.modelId
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -91,18 +132,16 @@ export default function NewStoryModal() {
         <div className="bg-gradient-to-r from-story-purple to-story-purple-light px-8 py-6">
           <h2 className="text-2xl font-black text-white">✨ New Story</h2>
           <p className="text-purple-200 text-sm mt-1 font-medium">
-            Step {step} of 2 — {step === 1 ? 'Story details' : 'Paste your story'}
+            Step {step} of 2 — {step === 1 ? 'Story details' : 'Story content'}
           </p>
         </div>
 
         <div className="px-8 py-6">
+          {/* ── Step 1: name / language / narrator ── */}
           {step === 1 && (
             <div className="space-y-5">
-              {/* Story name */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                  Story title
-                </label>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Story title</label>
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -113,11 +152,8 @@ export default function NewStoryModal() {
                 />
               </div>
 
-              {/* Language */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Language
-                </label>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Language</label>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { value: 'nl-NL', label: '🇳🇱 Nederlands' },
@@ -138,15 +174,12 @@ export default function NewStoryModal() {
                 </div>
               </div>
 
-              {/* Narrator */}
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Narrator
-                </label>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Narrator</label>
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { value: 'daughter1', label: '👧 Daughter 1' },
-                    { value: 'daughter2', label: '👧 Daughter 2' },
+                    { value: 'daughter1',   label: '👧 Daughter 1' },
+                    { value: 'daughter2',   label: '👧 Daughter 2' },
                     { value: 'alternating', label: '🔄 Alternating' },
                   ].map(opt => (
                     <button
@@ -166,53 +199,123 @@ export default function NewStoryModal() {
             </div>
           )}
 
+          {/* ── Step 2: tab toggle + content ── */}
           {step === 2 && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                  Paste your story
-                  <span className="font-normal text-gray-400 ml-2">— one paragraph per scene, separated by blank lines</span>
-                </label>
-                <textarea
-                  ref={textareaRef}
-                  value={storyText}
-                  onChange={e => { setStoryText(e.target.value); setSplitResult(null); setSplitError('') }}
-                  placeholder={"Er was eens een kleine beer die de sterren wilde aanraken.\n\nIedere nacht keek hij omhoog naar de hemel en droomde van avontuur.\n\n..."}
-                  rows={9}
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-700 font-medium focus:border-story-purple focus:outline-none transition-colors resize-none text-sm leading-relaxed"
-                />
+              {/* Tab toggle */}
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                <button
+                  onClick={() => setTab('paste')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                    tab === 'paste'
+                      ? 'bg-white shadow text-gray-800'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  ✏️ Paste Text
+                </button>
+                <button
+                  onClick={() => setTab('ai')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
+                    tab === 'ai'
+                      ? 'bg-white shadow text-gray-800'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  🤖 Write for Me
+                  {!lmOnline && <span className="ml-1 text-xs font-normal text-gray-400">(offline)</span>}
+                </button>
               </div>
 
-              {/* Split button */}
-              <button
-                onClick={handleSplit}
-                disabled={!storyText.trim()}
-                className="w-full bg-story-yellow hover:bg-story-yellow-dark text-white font-bold py-2.5 rounded-xl transition-colors disabled:opacity-40"
-              >
-                ✂️ Split into Scenes
-              </button>
-
-              {/* Error */}
-              {splitError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
-                  ⚠️ {splitError}
+              {/* ── Paste tab ── */}
+              {tab === 'paste' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                      Paste your story
+                      <span className="font-normal text-gray-400 ml-2">— one paragraph per scene, separated by blank lines</span>
+                    </label>
+                    <textarea
+                      ref={textareaRef}
+                      value={storyText}
+                      onChange={e => { setStoryText(e.target.value); setSplitResult(null); setSplitError('') }}
+                      placeholder={"Er was eens een kleine beer die de sterren wilde aanraken.\n\nIedere nacht keek hij omhoog naar de hemel en droomde van avontuur.\n\n..."}
+                      rows={9}
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-700 font-medium focus:border-story-purple focus:outline-none transition-colors resize-none text-sm leading-relaxed"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSplit}
+                    disabled={!storyText.trim()}
+                    className="w-full bg-story-yellow hover:bg-story-yellow-dark text-white font-bold py-2.5 rounded-xl transition-colors disabled:opacity-40"
+                  >
+                    ✂️ Split into Scenes
+                  </button>
+                  {splitError && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                      ⚠️ {splitError}
+                    </div>
+                  )}
+                  {splitResult && (
+                    <ScenePreview scenes={splitResult.map(t => ({ text: t }))} estimatedMin={estimatedMin} estimatedSec={estimatedSec} />
+                  )}
                 </div>
               )}
 
-              {/* Split preview */}
-              {splitResult && (
-                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                  <p className="text-green-800 font-bold text-sm mb-2">
-                    ✅ {splitResult.length} scenes — estimated {estimatedMin}:{estimatedSec.toString().padStart(2, '0')} video
-                  </p>
-                  <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-                    {splitResult.map((text, i) => (
-                      <div key={i} className="flex gap-2 text-xs text-green-700">
-                        <span className="font-bold w-6 shrink-0">#{i + 1}</span>
-                        <span className="truncate">{text.substring(0, 60)}{text.length > 60 ? '…' : ''}</span>
-                      </div>
-                    ))}
+              {/* ── Write for Me tab ── */}
+              {tab === 'ai' && (
+                <div className="space-y-3">
+                  {!lmOnline && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 font-medium">
+                      LM Studio is offline or no model is loaded. Start LM Studio and load a model, then come back.
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1.5">
+                      Story idea
+                    </label>
+                    <textarea
+                      value={idea}
+                      onChange={e => { setIdea(e.target.value); setAiResult(null); setAiError('') }}
+                      placeholder="A little bear who wants to touch the stars and goes on a nighttime adventure through the forest…"
+                      rows={4}
+                      className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-gray-700 font-medium focus:border-story-purple focus:outline-none transition-colors resize-none text-sm leading-relaxed"
+                    />
                   </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-bold text-gray-700 shrink-0">Scenes:</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={15}
+                      value={sceneCount}
+                      onChange={e => setSceneCount(Math.min(15, Math.max(5, Number(e.target.value))))}
+                      className="w-20 border-2 border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-gray-700 focus:border-story-purple focus:outline-none"
+                    />
+                    <span className="text-xs text-gray-400">(5–15)</span>
+                  </div>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={!idea.trim() || !lmOnline || generateStory.isPending}
+                    className="w-full bg-story-purple hover:bg-story-purple-dark disabled:opacity-40 text-white font-bold py-2.5 rounded-xl transition-colors"
+                  >
+                    {generateStory.isPending ? '⏳ Writing story…' : '🤖 Generate Story'}
+                  </button>
+                  {aiError && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
+                      ❌ {aiError}
+                    </div>
+                  )}
+                  {aiResult && (
+                    <>
+                      {aiResult.warned && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-xs text-amber-800 font-medium">
+                          The model returned {aiResult.scenes.length} scenes instead of {sceneCount}. You can still create the story.
+                        </div>
+                      )}
+                      <ScenePreview scenes={aiResult.scenes} estimatedMin={estimatedMin} estimatedSec={estimatedSec} showPrompts />
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -255,7 +358,7 @@ export default function NewStoryModal() {
               </button>
               <button
                 onClick={handleCreate}
-                disabled={!splitResult || createProject.isPending}
+                disabled={!canCreate || createProject.isPending}
                 className="px-6 py-2.5 rounded-xl bg-story-purple text-white font-bold hover:bg-story-purple-dark transition-colors disabled:opacity-40"
               >
                 {createProject.isPending ? 'Creating…' : '🎬 Create Story'}
@@ -263,6 +366,31 @@ export default function NewStoryModal() {
             </>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Scene preview list (shared by both tabs) ──────────────────────────────────
+
+function ScenePreview({ scenes, estimatedMin, estimatedSec, showPrompts = false }) {
+  return (
+    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+      <p className="text-green-800 font-bold text-sm mb-2">
+        ✅ {scenes.length} scenes — estimated {estimatedMin}:{estimatedSec.toString().padStart(2, '0')} video
+      </p>
+      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+        {scenes.map((s, i) => (
+          <div key={i} className="flex gap-2 text-xs text-green-700">
+            <span className="font-bold w-6 shrink-0">#{i + 1}</span>
+            <span className="truncate">
+              {s.text.substring(0, 60)}{s.text.length > 60 ? '…' : ''}
+              {showPrompts && s.illustrationPrompt && (
+                <span className="text-green-500 ml-1">· {s.illustrationPrompt.substring(0, 40)}…</span>
+              )}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )
