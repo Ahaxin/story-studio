@@ -1,6 +1,6 @@
 // NewStoryModal.jsx — Create a new story: name, language, paste text, split into scenes.
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import useStore from '../store/useStore'
 import { useCreateProject, useGenerateStory, useLmStudioStatus } from '../hooks/useIPC'
 
@@ -37,6 +37,7 @@ export default function NewStoryModal() {
   const [sceneCount, setSceneCount] = useState(8)
   const [aiResult, setAiResult] = useState(null)         // { scenes: [{text, illustrationPrompt}], warned }
   const [aiError, setAiError] = useState('')
+  const [genProgress, setGenProgress] = useState(0)  // 0–100
 
   const [error, setError] = useState('')
 
@@ -57,15 +58,32 @@ export default function NewStoryModal() {
     setSplitResult(paragraphs)
   }
 
+  // ── Progress bar: ticks up while generating, stops at 90% until done ────────
+  useEffect(() => {
+    if (!generateStory.isPending) return
+    setGenProgress(0)
+    // Increment toward 90% asymptotically — slows as it approaches the cap
+    const interval = setInterval(() => {
+      setGenProgress(p => {
+        const remaining = 90 - p
+        return p + Math.max(0.3, remaining * 0.03)
+      })
+    }, 500)
+    return () => clearInterval(interval)
+  }, [generateStory.isPending])
+
   // ── AI tab: generate ──────────────────────────────────────────────────────
   async function handleGenerate() {
     setAiError('')
     setAiResult(null)
+    setGenProgress(0)
     generateStory.reset()
     try {
       const result = await generateStory.mutateAsync({ idea: idea.trim(), language, sceneCount })
+      setGenProgress(100)
       setAiResult(result)
     } catch (err) {
+      setGenProgress(0)
       setAiError(err.message)
     }
   }
@@ -299,8 +317,24 @@ export default function NewStoryModal() {
                     disabled={!idea.trim() || !lmOnline || generateStory.isPending}
                     className="w-full bg-story-purple hover:bg-story-purple-dark disabled:opacity-40 text-white font-bold py-2.5 rounded-xl transition-colors"
                   >
-                    {generateStory.isPending ? '⏳ Writing story…' : '🤖 Generate Story'}
+                    {generateStory.isPending ? '✍️ Writing story…' : '🤖 Generate Story'}
                   </button>
+                  {generateStory.isPending && (
+                    <div className="space-y-1.5">
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-story-purple transition-all duration-500"
+                          style={{ width: `${Math.min(genProgress, 100)}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400 text-center font-medium">
+                        {genProgress < 30 ? 'Setting the scene…'
+                          : genProgress < 60 ? 'Writing scenes…'
+                          : genProgress < 85 ? 'Crafting illustration prompts…'
+                          : 'Almost done…'}
+                      </p>
+                    </div>
+                  )}
                   {aiError && (
                     <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
                       ❌ {aiError}
