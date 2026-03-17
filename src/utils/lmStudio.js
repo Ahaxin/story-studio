@@ -67,12 +67,34 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
     throw new Error(`LM Studio error: ${err.message}`)
   }
 
-  // Strip markdown code fences if model wrapped the JSON
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  // Extract JSON from the response — handles thinking models that prefix their reasoning
+  // before the JSON, and models that wrap it in markdown code fences.
+  let jsonText = null
+
+  // 1. Try extracting a ```json ... ``` block
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenceMatch) {
+    jsonText = fenceMatch[1].trim()
+  }
+
+  // 2. Try finding the first { ... } JSON object in the response
+  if (!jsonText) {
+    const start = raw.indexOf('{')
+    const end = raw.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      jsonText = raw.slice(start, end + 1)
+    }
+  }
+
+  if (!jsonText) {
+    const err = new Error('Model returned invalid response. Try again.')
+    err.rawResponse = raw
+    throw err
+  }
 
   let parsed
   try {
-    parsed = JSON.parse(cleaned)
+    parsed = JSON.parse(jsonText)
   } catch {
     const err = new Error('Model returned invalid response. Try again.')
     err.rawResponse = raw
