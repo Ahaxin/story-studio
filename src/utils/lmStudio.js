@@ -56,7 +56,7 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
         temperature: 0.8,
         max_tokens: 4096,
       },
-      { timeout: 60000 }
+      { timeout: 180000 }
     )
     raw = res.data?.choices?.[0]?.message?.content || ''
   } catch (err) {
