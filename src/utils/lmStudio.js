@@ -54,16 +54,17 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
           { role: 'user', content: idea },
         ],
         temperature: 0.8,
-        max_tokens: 4096,
+        max_tokens: 2048,
       },
-      { timeout: 180000 }
+      { timeout: 300000 }
     )
     raw = res.data?.choices?.[0]?.message?.content || ''
   } catch (err) {
+    console.error('[lmStudio] generateStory error — code:', err.code, '| message:', err.message)
     if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
       throw new Error('LM Studio took too long to respond.')
     }
-    throw new Error('LM Studio is not running. Start it and load a model first.')
+    throw new Error(`LM Studio error: ${err.message}`)
   }
 
   // Strip markdown code fences if model wrapped the JSON
