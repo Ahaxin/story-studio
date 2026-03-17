@@ -311,16 +311,16 @@ export function useRemoveCharacter() {
 
 // ── LM Studio hooks ───────────────────────────────────────────────────────────
 
-/** Poll LM Studio status every 5s — { online: boolean, modelId: string|null } */
+/** Check if LM Studio is running. Only refetches when manually triggered via refetch(). */
 export function useLmStudioStatus() {
   return useQuery({
     queryKey: ['lmstudio-status'],
     queryFn: async () => {
       const res = await api.lmStudioStatus()
       if (!res.success) throw new Error(res.error)
-      return res.data  // { online, modelId }
+      return res.data  // { online: boolean, modelId: string|null }
     },
-    refetchInterval: 5000,
+    staleTime: Infinity,
     retry: false,
   })
 }

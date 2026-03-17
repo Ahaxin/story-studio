@@ -8,6 +8,7 @@ import {
   useUpdateScene,
   useSaveSceneRecording,
   useGeneratePrompt,
+  useLmStudioStatus,
 } from '../hooks/useIPC'
 
 const TRANSITIONS = [
@@ -24,6 +25,8 @@ export default function SceneEditor() {
   const saveRecording = useSaveSceneRecording()
   const updateSceneMutation = useUpdateScene()
   const generatePrompt = useGeneratePrompt()
+  const { data: lmData } = useLmStudioStatus()
+  const lmOnline = lmData?.online && lmData?.modelId
   const [audioBust, setAudioBust] = useState(0)
   const [recordingBust, setRecordingBust] = useState(0)
   const [illustrationBust, setIllustrationBust] = useState(0)
@@ -219,9 +222,9 @@ export default function SceneEditor() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleAiPrompt}
-                  disabled={generatePrompt.isPending}
+                  disabled={generatePrompt.isPending || !lmOnline}
                   className="text-xs font-bold text-story-purple hover:text-story-purple-dark disabled:opacity-40 transition-colors"
-                  title="Generate illustration prompt with AI (LM Studio)"
+                  title={lmOnline ? 'Generate illustration prompt with AI (LM Studio)' : 'LM Studio is offline'}
                 >
                   {generatePrompt.isPending ? '⏳' : '✨ AI'}
                 </button>

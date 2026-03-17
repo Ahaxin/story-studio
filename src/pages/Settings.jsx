@@ -8,7 +8,7 @@ export default function Settings() {
   const { data: settings, isLoading } = useSettings()
   const saveSetting = useSaveSettings()
   const { data: xttsData } = useXttsStatus()
-  const { data: lmStudioData } = useLmStudioStatus()
+  const { data: lmStudioData, refetch: recheckLmStudio, isFetching: lmChecking } = useLmStudioStatus()
 
   const [nanoBananaKey, setNanoBananaKey] = useState('')
   const [elevenLabsKey, setElevenLabsKey] = useState('')
@@ -79,7 +79,7 @@ export default function Settings() {
         <XttsStatusBanner status={xttsStatus} />
 
         {/* LM Studio status banner */}
-        <LmStudioStatusBanner data={lmStudioData} />
+        <LmStudioStatusBanner data={lmStudioData} onRecheck={recheckLmStudio} checking={lmChecking} />
 
         {/* API Keys */}
         <Section title="🔑 API Keys">
@@ -573,7 +573,7 @@ function CharacterCard({ character, onRemove, isRemoving }) {
 
 // ── LM Studio status banner ───────────────────────────────────────────────────
 
-function LmStudioStatusBanner({ data }) {
+function LmStudioStatusBanner({ data, onRecheck, checking }) {
   // data is undefined while loading — show nothing until first poll resolves
   if (!data) return null
 
@@ -592,6 +592,13 @@ function LmStudioStatusBanner({ data }) {
               : 'Load a model in LM Studio to enable Write for Me.'}
           </p>
         </div>
+        <button
+          onClick={onRecheck}
+          disabled={checking}
+          className="text-xs font-bold text-green-700 hover:text-green-900 disabled:opacity-40 transition-colors shrink-0"
+        >
+          {checking ? 'Checking…' : 'Recheck'}
+        </button>
       </div>
     )
   }
@@ -606,6 +613,13 @@ function LmStudioStatusBanner({ data }) {
           Download from <span className="font-mono">lmstudio.ai</span>
         </p>
       </div>
+      <button
+        onClick={onRecheck}
+        disabled={checking}
+        className="text-xs font-bold text-gray-500 hover:text-gray-700 disabled:opacity-40 transition-colors shrink-0"
+      >
+        {checking ? 'Checking…' : 'Recheck'}
+      </button>
     </div>
   )
 }
