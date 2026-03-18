@@ -104,6 +104,7 @@ async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey
   // Build parts array — reference images first (if any), then the text prompt
   const parts = []
 
+  let hasRefImages = false
   for (const refPath of referenceImagePaths) {
     if (refPath && fs.existsSync(refPath)) {
       const ext = path.extname(refPath).toLowerCase().replace('.', '')
@@ -113,9 +114,21 @@ async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey
       const imageData = fs.readFileSync(refPath).toString('base64')
       parts.push({ inlineData: { mimeType, data: imageData } })
       console.log(`[nanoBanana] Including reference image: ${path.basename(refPath)}`)
+      hasRefImages = true
     } else if (refPath) {
       console.warn(`[nanoBanana] Reference image not found, skipping: ${refPath}`)
     }
+  }
+
+  if (hasRefImages) {
+    parts.push({
+      text:
+        'The image(s) above are character reference(s). ' +
+        'Use them ONLY to match the character\'s face, hair, and skin tone. ' +
+        'Do NOT copy the pose, expression, or clothing from the reference. ' +
+        'Instead, choose clothing that fits the scene\'s environment and activity. ' +
+        'Show a natural posture and gesture that matches what the character is doing in the scene.',
+    })
   }
 
   parts.push({ text: prompt })

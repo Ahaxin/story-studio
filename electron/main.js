@@ -219,13 +219,22 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
 
     const narrator = project.style[scene.narrator] || project.style[project.style.activeNarrator]
 
-    // Collect all reference images: narrator reference + any character library matches
+    // Collect all reference images: all daughters + character library, matched by name
+    // against both scene text and illustration prompt (prompt often names characters
+    // explicitly even when the story sentence uses pronouns).
+    const sceneContent = `${scene.text} ${scene.illustrationPrompt || ''}`
     const refPaths = []
-    if (narrator?.characterReferencePath) refPaths.push(narrator.characterReferencePath)
+
+    const allDaughters = store.get('daughters') || {}
+    for (const d of Object.values(allDaughters)) {
+      if (d?.characterReferencePath && d?.name && sceneContent.includes(d.name)) {
+        refPaths.push(d.characterReferencePath)
+      }
+    }
 
     const allCharacters = store.get('characters', [])
     for (const char of allCharacters) {
-      if (char.imagePath && scene.text.includes(char.name)) {
+      if (char.imagePath && sceneContent.includes(char.name)) {
         refPaths.push(char.imagePath)
       }
     }

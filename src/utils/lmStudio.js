@@ -35,14 +35,10 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
   const langName = LANGUAGE_NAMES[language] || 'Dutch'
 
   const systemPrompt =
-    `You are a children's book author. Write a children's story in ${langName} ` +
-    `based on the following idea. The story must have exactly ${sceneCount} scenes (paragraphs). ` +
-    `Each paragraph should be 20-40 words, warm, and safe for children aged 4-10.\n\n` +
-    `Return ONLY valid JSON with no other text, in this exact shape:\n` +
-    `{\n  "scenes": [\n    { "text": "...", "illustrationPrompt": "..." },\n    ...\n  ]\n}\n\n` +
-    `For each scene, "illustrationPrompt" should be a vivid, specific description ` +
-    `suitable for a watercolor children's book illustration — describe the setting, ` +
-    `characters, mood, and action in 1-2 sentences.`
+    `Write a ${langName} children's story (ages 4-10) with exactly ${sceneCount} scenes. ` +
+    `Each scene: 20-40 words, warm tone. ` +
+    `Each illustrationPrompt: vivid watercolor description, 1-2 sentences. ` +
+    `Reply with ONLY valid JSON, no explanation: {"scenes":[{"text":"...","illustrationPrompt":"..."}]}`
 
   let raw
   try {
@@ -51,15 +47,49 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
       {
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: idea },
+          { role: 'user', content: `${idea} /no_think` },
         ],
         temperature: 0.8,
-        max_tokens: 2048,
+        max_tokens: 4096,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'story',
+            strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                scenes: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      text: { type: 'string' },
+                      illustrationPrompt: { type: 'string' },
+                    },
+                    required: ['text', 'illustrationPrompt'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['scenes'],
+              additionalProperties: false,
+            },
+          },
+        },
       },
       { timeout: 300000 }
     )
-    raw = res.data?.choices?.[0]?.message?.content || ''
+    const choice = res.data?.choices?.[0]
+    raw = choice?.message?.content || ''
+    if (choice?.finish_reason === 'length') {
+      console.warn('[lmStudio] finish_reason=length — model hit context window before writing JSON')
+      throw new Error(
+        'Model ran out of context before writing the story. In LM Studio, increase the model\'s context length to 16384 or more, or use a non-thinking model variant.'
+      )
+    }
   } catch (err) {
+    if (err.message?.includes('context length') || err.message?.includes('context window')) throw err
     console.error('[lmStudio] generateStory error — code:', err.code, '| message:', err.message)
     if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
       throw new Error('LM Studio took too long to respond.')
@@ -67,9 +97,12 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
     throw new Error(`LM Studio error: ${err.message}`)
   }
 
-  // Extract JSON from the response — handles thinking models that prefix their reasoning
-  // before the JSON, and models that wrap it in markdown code fences.
-  let jsonText = null
+  console.log('[lmStudio] raw response length:', raw.length, '| first 200 chars:', raw.slice(0, 200))
+  console.log('[lmStudio] last 500 chars:', raw.slice(-500))
+
+  // Extract JSON — try direct parse first (structured output returns raw JSON),
+  // then fall back to heuristics for fences / reasoning prefixes.
+  let jsonText = raw.trim()
 
   // 1. Try extracting a ```json ... ``` block
   const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)
@@ -77,8 +110,8 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
     jsonText = fenceMatch[1].trim()
   }
 
-  // 2. Try finding the first { ... } JSON object in the response
-  if (!jsonText) {
+  // 2. Find the first { ... last } block — handles reasoning text before/after JSON
+  if (!fenceMatch) {
     const start = raw.indexOf('{')
     const end = raw.lastIndexOf('}')
     if (start !== -1 && end > start) {
@@ -92,17 +125,24 @@ async function generateStory({ idea, language, sceneCount = 8 }) {
     throw err
   }
 
+  // Repair common local-model JSON issues before parsing
+  const repaired = jsonText
+    .replace(/,\s*([}\]])/g, '$1')   // trailing commas before } or ]
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '') // stray control chars
+
   let parsed
   try {
-    parsed = JSON.parse(jsonText)
-  } catch {
-    const err = new Error('Model returned invalid response. Try again.')
+    parsed = JSON.parse(repaired)
+  } catch (parseErr) {
+    console.error('[lmStudio] JSON.parse failed:', parseErr.message, '| jsonText start:', jsonText?.slice(0, 200))
+    const err = new Error('Model returned invalid JSON. Try again.')
     err.rawResponse = raw
     throw err
   }
 
   if (!Array.isArray(parsed?.scenes)) {
-    const err = new Error('Model returned invalid response. Try again.')
+    console.error('[lmStudio] parsed.scenes is not an array:', typeof parsed?.scenes, '| keys:', Object.keys(parsed || {}))
+    const err = new Error('Model response missing "scenes" array. Try again.')
     err.rawResponse = raw
     throw err
   }
