@@ -210,10 +210,20 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - Timeout: 300s for story gen — local LLMs are slow; axios `timeout` is total request duration
 - Thinking/reasoning models (Qwen, DeepSeek-R1, etc.) prefix JSON output with reasoning text — always extract JSON by finding first `{` ... last `}`, not by assuming it starts at position 0
 - useLmStudioStatus: staleTime: Infinity — manual-only refresh via Recheck button; no polling
+- Qwen3: disable thinking with `/no_think` appended to user message — `chat_template_kwargs: { enable_thinking: false }` is unreliable in LM Studio
+- Use `response_format: { type: 'json_schema', ... }` for guaranteed valid JSON — eliminates parse errors
+- Structured output returns `{ "scenes":` (with space) — JSON extraction MUST use `indexOf('{')` (first `{`), NOT `lastIndexOf('{')` which picks up last scene object
+- Do NOT use `stream: true` for story gen — causes silent failures with LM Studio; non-streaming is reliable
+- `max_tokens: 4096` is sufficient for 8-scene stories with thinking disabled
+
+## Nano Banana Character Reference Images
+- Match character names against BOTH `scene.text` AND `scene.illustrationPrompt` — Dutch text often uses pronouns; prompt names character explicitly
+- Check ALL daughters (`store.get('daughters')`) not just the narrator — narrator may not be the story character
+- After sending reference images, add a text part instructing Gemini: face/hair only from reference, adapt clothing and pose to scene action
+- Reference image guidance text must come BETWEEN the inlineData parts and the final prompt text
 
 ## Next Steps / Known Improvements
-- Configure Daughter 2 profile (name, voice engine, voiceId)
-- Test character reference image consistency across generated illustrations
+- Daughter 2 (Iris) profile configured — voice engine/voiceId still needs setup
 - Generate All only runs on `pending` scenes — add "Regenerate failed" for `illustration-done`/`narration-done`
 - Subtitle display: `drawtext` is single-line only — consider wrapped text box overlay
 - Test full Dutch + Chinese end-to-end export
