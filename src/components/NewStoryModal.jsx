@@ -183,7 +183,10 @@ export default function NewStoryModal() {
   async function handleSaveCharacters() {
     setSaveError('')
     try {
-      await saveDiscovered.mutateAsync({ characters: discoveredChars })
+      const toSave = discoveredChars.filter(c => !c.alreadySaved)
+      if (toSave.length > 0) {
+        await saveDiscovered.mutateAsync({ characters: toSave })
+      }
       closeNewStoryModal()
     } catch (err) {
       setSaveError('Failed to save characters — try again.')
@@ -480,7 +483,11 @@ export default function NewStoryModal() {
                   </div>
                   <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
                     {discoveredChars.map((char, i) => (
-                      <div key={char._key} className="relative border-2 border-gray-200 rounded-2xl overflow-hidden">
+                      <div key={char._key} className={`relative border-2 rounded-2xl overflow-hidden ${char.alreadySaved ? 'border-green-200' : 'border-gray-200'}`}>
+                        {/* Already saved badge */}
+                        {char.alreadySaved && (
+                          <span className="absolute top-1.5 left-1.5 z-10 bg-green-100 text-green-700 text-xs font-bold px-1.5 py-0.5 rounded-full">✓ In library</span>
+                        )}
                         {/* Remove button */}
                         <button
                           onClick={() => setDiscoveredChars(prev => prev.filter((_, idx) => idx !== i))}
@@ -596,14 +603,15 @@ export default function NewStoryModal() {
             </>
           )}
 
-          {step === 3 && (
-            discoveredChars.length > 0 ? (
+          {step === 3 && (() => {
+            const newCount = discoveredChars.filter(c => !c.alreadySaved).length
+            return newCount > 0 ? (
               <button
                 onClick={handleSaveCharacters}
                 disabled={isDiscovering || saveDiscovered.isPending}
                 className="px-6 py-2.5 rounded-xl bg-story-purple text-white font-bold hover:bg-story-purple-dark transition-colors disabled:opacity-40"
               >
-                {saveDiscovered.isPending ? 'Saving…' : `Save ${discoveredChars.length} Character${discoveredChars.length === 1 ? '' : 's'} →`}
+                {saveDiscovered.isPending ? 'Saving…' : `Save ${newCount} new Character${newCount === 1 ? '' : 's'} →`}
               </button>
             ) : (
               <button
@@ -613,7 +621,7 @@ export default function NewStoryModal() {
                 Close &amp; Start Editing →
               </button>
             )
-          )}
+          })()}
         </div>
       </div>
     </div>

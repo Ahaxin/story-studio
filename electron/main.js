@@ -745,20 +745,13 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
       return { success: true, data: { added: [], skipped: [], warning: `LM Studio unavailable: ${err.message}` } }
     }
 
-    // Build set of already-known names (daughters + existing library) — skip these
-    // Use lowercase for case-insensitive deduplication
+    // Build lookup of already-known names (daughters + existing library)
     const daughters = store.get('daughters') || {}
+    const existingChars = store.get('characters', [])
     const knownNamesLower = new Set([
       ...Object.values(daughters).map(d => d.name).filter(Boolean).map(n => n.toLowerCase()),
-      ...store.get('characters', []).map(c => c.name).filter(Boolean).map(n => n.toLowerCase()),
+      ...existingChars.map(c => c.name).filter(Boolean).map(n => n.toLowerCase()),
     ])
-
-    const newChars = extracted.filter(c => c.name && !knownNamesLower.has(c.name.toLowerCase()))
-    const skipped  = extracted.filter(c => c.name &&  knownNamesLower.has(c.name.toLowerCase())).map(c => c.name)
-
-    if (newChars.length === 0) {
-      return { success: true, data: { added: [], skipped } }
-    }
 
     // Ensure characters directory exists
     const voicesDir = app.isPackaged
@@ -769,33 +762,48 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
 
     const apiKey = store.get('nanoBananaApiKey') || process.env.NANO_BANANA_API_KEY
 
+    // Process ALL extracted characters — existing ones shown with alreadySaved flag,
+    // new ones get a portrait generated
     const added = []
-    for (const char of newChars) {
-      try {
-        // Build a portrait prompt: neutral standing pose, plain background, clear face
-        const portraitPrompt = [
-          "children's book watercolor character portrait",
-          `a character named ${char.name}`,
-          char.description ? char.description : 'friendly child-appropriate appearance',
-          'full body standing, facing viewer',
-          'plain cream or white background',
-          'clear friendly face, expressive eyes',
-          'consistent character design for children\'s picture book',
-          "safe for kids aged 4-10, bright and cheerful",
-        ].join(', ')
+    for (const char of extracted) {
+      if (!char.name) continue
+      const isKnown = knownNamesLower.has(char.name.toLowerCase())
+      if (isKnown) {
+        // Already in library — include for display with alreadySaved flag
+        const entry = existingChars.find(c => c.name.toLowerCase() === char.name.toLowerCase())
+        added.push({
+          name: entry?.name ?? char.name,
+          imagePath: entry?.imagePath ?? null,
+          description: entry?.description || char.description || '',
+          alreadySaved: true,
+        })
+        console.log(`[auto-discover] Already in library: ${char.name}`)
+      } else {
+        // New character — generate portrait
+        try {
+          const portraitPrompt = [
+            "children's book watercolor character portrait",
+            `a character named ${char.name}`,
+            char.description ? char.description : 'friendly child-appropriate appearance',
+            'full body standing, facing viewer',
+            'plain cream or white background',
+            'clear friendly face, expressive eyes',
+            'consistent character design for children\'s picture book',
+            "safe for kids aged 4-10, bright and cheerful",
+          ].join(', ')
 
-        const destPath = path.join(charactersDir, `${sanitizeCharacterName(char.name)}_reference.png`)
-        await generatePortrait(portraitPrompt, destPath, apiKey)
-        added.push({ name: char.name, imagePath: destPath, description: char.description || '' })
-        console.log(`[auto-discover] Portrait created for: ${char.name}`)
-      } catch (err) {
-        console.warn(`[auto-discover] Portrait failed for ${char.name}:`, err.message)
-        // Still include the character in review — user can regenerate portrait manually
-        added.push({ name: char.name, imagePath: null, description: char.description || '' })
+          const destPath = path.join(charactersDir, `${sanitizeCharacterName(char.name)}_reference.png`)
+          await generatePortrait(portraitPrompt, destPath, apiKey)
+          added.push({ name: char.name, imagePath: destPath, description: char.description || '', alreadySaved: false })
+          console.log(`[auto-discover] Portrait created for: ${char.name}`)
+        } catch (err) {
+          console.warn(`[auto-discover] Portrait failed for ${char.name}:`, err.message)
+          added.push({ name: char.name, imagePath: null, description: char.description || '', alreadySaved: false })
+        }
       }
     }
 
-    return { success: true, data: { added, skipped } }
+    return { success: true, data: { added, skipped: [] } }
   } catch (err) {
     return { success: false, error: err.message }
   }
