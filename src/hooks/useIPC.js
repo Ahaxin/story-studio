@@ -315,15 +315,37 @@ export function useRemoveCharacter() {
  * On success, invalidates the character library query.
  */
 export function useAutoDiscoverCharacters() {
-  const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ projectId }) => {
       const res = await api.characterAutoDiscover({ projectId })
       if (!res.success) throw new Error(res.error)
       return res.data  // { added: [{name, imagePath, description}], skipped: [names], warning? }
     },
+  })
+}
+
+/** Save a confirmed list of discovered characters to the global library. */
+export function useSaveDiscoveredCharacters() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ characters }) => {
+      const res = await api.charactersSaveBatch({ characters })
+      if (!res.success) throw new Error(res.error)
+      return res.data
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['characters'] })
+    },
+  })
+}
+
+/** Regenerate a single character portrait with an updated description. */
+export function useRegeneratePortrait() {
+  return useMutation({
+    mutationFn: async ({ name, description }) => {
+      const res = await api.characterRegeneratePortrait({ name, description })
+      if (!res.success) throw new Error(res.error)
+      return res.data  // { name, imagePath }
     },
   })
 }

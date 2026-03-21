@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   characterAdd:           (args) => ipcRenderer.invoke('character:add', args),
   characterRemove:        (args) => ipcRenderer.invoke('character:remove', args),
   characterAutoDiscover:  (args) => ipcRenderer.invoke('characters:auto-discover', args),
+  charactersSaveBatch:         (args) => ipcRenderer.invoke('characters:save-batch', args),
+  characterRegeneratePortrait: (args) => ipcRenderer.invoke('character:regenerate-portrait', args),
 
   // LM Studio (local LLM)
   lmStudioStatus:          ()     => ipcRenderer.invoke('lmstudio:status'),
