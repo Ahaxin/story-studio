@@ -801,6 +801,51 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
   }
 })
 
+// characters:save-batch — Persist a confirmed list of discovered characters to the library
+ipcMain.handle('characters:save-batch', async (event, { characters }) => {
+  try {
+    if (!Array.isArray(characters)) throw new Error('characters must be an array')
+    const existing = store.get('characters', [])
+    const existingLower = new Set(existing.map(c => c.name?.toLowerCase()).filter(Boolean))
+    const toAdd = characters.filter(c => c.name && !existingLower.has(c.name.toLowerCase()))
+    const updated = [...existing, ...toAdd]
+    store.set('characters', updated)
+    return { success: true, data: updated }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// character:regenerate-portrait — Regenerate portrait image with an updated description prompt
+ipcMain.handle('character:regenerate-portrait', async (event, { name, description }) => {
+  try {
+    const { generatePortrait } = require('../src/utils/nanoBanana')
+    const voicesDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'voices')
+      : path.join(__dirname, '..', 'voices')
+    const charactersDir = path.join(voicesDir, 'characters')
+    fs.mkdirSync(charactersDir, { recursive: true })
+
+    const apiKey = store.get('nanoBananaApiKey') || process.env.NANO_BANANA_API_KEY
+    const portraitPrompt = [
+      "children's book watercolor character portrait",
+      `a character named ${name}`,
+      description || 'friendly child-appropriate appearance',
+      'full body standing, facing viewer',
+      'plain cream or white background',
+      'clear friendly face, expressive eyes',
+      "consistent character design for children's picture book",
+      "safe for kids aged 4-10, bright and cheerful",
+    ].join(', ')
+
+    const imagePath = path.join(charactersDir, `${sanitizeCharacterName(name)}_reference.png`)
+    await generatePortrait(portraitPrompt, imagePath, apiKey)
+    return { success: true, data: { name, imagePath } }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 // settings:get — Return value from electron-store
 ipcMain.handle('settings:get', async (event, { key }) => {
   try {
