@@ -199,7 +199,7 @@ ipcMain.handle('story:update-style', async (event, { projectId, styleId, illustr
 // style:list-previews — Return {id: absoluteFilePath | null} for all 8 style presets
 ipcMain.handle('style:list-previews', async () => {
   try {
-    const { STYLE_PRESETS } = require('../src/utils/stylePresets')
+    const STYLE_PRESETS = require('../src/utils/stylePresetsData.json')
     const previewsDir = app.isPackaged
       ? path.join(app.getPath('userData'), 'voices', 'style-previews')
       : path.join(__dirname, '..', 'voices', 'style-previews')
@@ -218,7 +218,7 @@ ipcMain.handle('style:list-previews', async () => {
 // style:generate-previews — Generate missing preview images for all style presets
 ipcMain.handle('style:generate-previews', async () => {
   try {
-    const { STYLE_PRESETS } = require('../src/utils/stylePresets')
+    const STYLE_PRESETS = require('../src/utils/stylePresetsData.json')
     const { generatePortrait } = require('../src/utils/nanoBanana')
 
     const previewsDir = app.isPackaged
@@ -300,23 +300,32 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
 
     const narrator = project.style[scene.narrator] || project.style[project.style.activeNarrator]
 
-    // Collect all reference images: all daughters + character library, matched by name
-    // against both scene text and illustration prompt (prompt often names characters
-    // explicitly even when the story sentence uses pronouns).
+    // Collect all reference images: narrator always included, other daughters + library
+    // characters matched case-insensitively against scene text + illustration prompt.
     const sceneContent = `${scene.text} ${scene.illustrationPrompt || ''}`
+    const sceneContentLower = sceneContent.toLowerCase()
     const refPaths = []
 
     const narratorKey = scene.narrator || project.style.activeNarrator
     const allDaughters = store.get('daughters') || {}
-    for (const d of Object.values(allDaughters)) {
-      if (d?.characterReferencePath && d?.name && sceneContent.includes(d.name)) {
+
+    // Narrator always gets their reference image (they're in every scene, often via pronouns)
+    const narratorDaughter = allDaughters[narratorKey]
+    if (narratorDaughter?.characterReferencePath) {
+      refPaths.push(narratorDaughter.characterReferencePath)
+    }
+
+    // Other daughters: only when their name appears in the scene (case-insensitive)
+    for (const [key, d] of Object.entries(allDaughters)) {
+      if (key === narratorKey) continue
+      if (d?.characterReferencePath && d?.name && sceneContentLower.includes(d.name.toLowerCase())) {
         refPaths.push(d.characterReferencePath)
       }
     }
 
     const allCharacters = store.get('characters', [])
     for (const char of allCharacters) {
-      if (char.imagePath && sceneContent.includes(char.name)) {
+      if (char.imagePath && char.name && sceneContentLower.includes(char.name.toLowerCase())) {
         refPaths.push(char.imagePath)
       }
     }
@@ -342,12 +351,12 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
         charContextParts.push(narrator.characterPrompt.trim())
       }
       for (const [key, d] of Object.entries(allDaughters)) {
-        if (key !== narratorKey && d?.name && d?.characterPrompt && sceneContent.includes(d.name)) {
+        if (key !== narratorKey && d?.name && d?.characterPrompt && sceneContentLower.includes(d.name.toLowerCase())) {
           charContextParts.push(`${d.name}: ${d.characterPrompt.trim()}`)
         }
       }
       for (const char of allCharacters) {
-        if (char.description && char.name && sceneContent.includes(char.name)) {
+        if (char.description && char.name && sceneContentLower.includes(char.name.toLowerCase())) {
           charContextParts.push(`${char.name}: ${char.description.trim()}`)
         }
       }
@@ -712,6 +721,10 @@ ipcMain.handle('character:remove', async (event, { name }) => {
   }
 })
 
+function sanitizeCharacterName(name) {
+  return name.replace(/[^a-zA-Z0-9\-_]/g, '_')
+}
+
 // characters:auto-discover — Scan story text, extract named characters via LM Studio,
 // generate a portrait reference image for each new character, save to library.
 ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
@@ -733,14 +746,15 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
     }
 
     // Build set of already-known names (daughters + existing library) — skip these
+    // Use lowercase for case-insensitive deduplication
     const daughters = store.get('daughters') || {}
-    const knownNames = new Set([
-      ...Object.values(daughters).map(d => d.name).filter(Boolean),
-      ...store.get('characters', []).map(c => c.name),
+    const knownNamesLower = new Set([
+      ...Object.values(daughters).map(d => d.name).filter(Boolean).map(n => n.toLowerCase()),
+      ...store.get('characters', []).map(c => c.name).filter(Boolean).map(n => n.toLowerCase()),
     ])
 
-    const newChars = extracted.filter(c => c.name && !knownNames.has(c.name))
-    const skipped = extracted.filter(c => c.name && knownNames.has(c.name)).map(c => c.name)
+    const newChars = extracted.filter(c => c.name && !knownNamesLower.has(c.name.toLowerCase()))
+    const skipped  = extracted.filter(c => c.name &&  knownNamesLower.has(c.name.toLowerCase())).map(c => c.name)
 
     if (newChars.length === 0) {
       return { success: true, data: { added: [], skipped } }
@@ -770,18 +784,8 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
           "safe for kids aged 4-10, bright and cheerful",
         ].join(', ')
 
-        const destPath = path.join(charactersDir, `${char.name}_reference.png`)
+        const destPath = path.join(charactersDir, `${sanitizeCharacterName(char.name)}_reference.png`)
         await generatePortrait(portraitPrompt, destPath, apiKey)
-
-        // Add to library (re-read fresh to avoid races with concurrent calls)
-        const freshChars = store.get('characters', [])
-        if (!freshChars.some(c => c.name === char.name)) {
-          store.set('characters', [...freshChars, {
-            name: char.name,
-            imagePath: destPath,
-            description: char.description || '',
-          }])
-        }
 
         added.push({ name: char.name, imagePath: destPath, description: char.description || '' })
         console.log(`[auto-discover] Portrait created for: ${char.name}`)
