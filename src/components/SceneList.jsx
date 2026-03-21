@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import useStore from '../store/useStore'
-import { useGenerateIllustration, useGenerateNarration, useAutoDiscoverCharacters } from '../hooks/useIPC'
+import { useGenerateIllustration, useGenerateNarration, useAutoDiscoverCharacters, useSaveDiscoveredCharacters } from '../hooks/useIPC'
 
 const STATUS_CONFIG = {
   pending:           { label: 'Pending',    color: 'bg-gray-100 text-gray-500' },
@@ -17,6 +17,7 @@ export default function SceneList() {
   const genNarration = useGenerateNarration()
 
   const autoDiscover = useAutoDiscoverCharacters()
+  const saveDiscovered = useSaveDiscoveredCharacters()
 
   const [generatingType, setGeneratingType] = useState(null) // null | 'discovering' | 'images' | 'sounds'
   const [genProgress, setGenProgress] = useState({ done: 0, total: 0 })
@@ -36,6 +37,9 @@ export default function SceneList() {
       const result = await autoDiscover.mutateAsync({ projectId: currentProject.id })
       setDiscoverResult(result)
       console.log(`[SceneList] Auto-discover: +${result.added.length} new, ${result.skipped.length} known`)
+      if (result.added.length > 0) {
+        await saveDiscovered.mutateAsync({ characters: result.added })
+      }
     } catch (err) {
       // Non-fatal — log and continue (LM Studio may be offline)
       console.warn('[SceneList] Character auto-discover failed (continuing):', err.message)
