@@ -786,12 +786,12 @@ ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
 
         const destPath = path.join(charactersDir, `${sanitizeCharacterName(char.name)}_reference.png`)
         await generatePortrait(portraitPrompt, destPath, apiKey)
-
         added.push({ name: char.name, imagePath: destPath, description: char.description || '' })
         console.log(`[auto-discover] Portrait created for: ${char.name}`)
       } catch (err) {
         console.warn(`[auto-discover] Portrait failed for ${char.name}:`, err.message)
-        // Continue with remaining characters
+        // Still include the character in review — user can regenerate portrait manually
+        added.push({ name: char.name, imagePath: null, description: char.description || '' })
       }
     }
 
