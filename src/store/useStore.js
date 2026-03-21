@@ -20,6 +20,9 @@ const useStore = create((set, get) => ({
     currentPage: 'editor',
   }),
 
+  // Replace the full in-memory project (e.g. after style update) without changing page/scene
+  patchCurrentProject: (project) => set({ currentProject: project }),
+
   // Patch the in-memory project (after IPC write succeeds)
   updateProjectField: (field, value) => set((state) => ({
     currentProject: state.currentProject

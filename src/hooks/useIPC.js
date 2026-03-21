@@ -66,8 +66,8 @@ export function useCreateProject() {
   const setCurrentProject = useStore(s => s.setCurrentProject)
 
   return useMutation({
-    mutationFn: async ({ name, language, scenes }) => {
-      const res = await api.storyCreate({ name, language, scenes })
+    mutationFn: async ({ name, language, scenes, illustrationStyle, styleId }) => {
+      const res = await api.storyCreate({ name, language, scenes, illustrationStyle, styleId })
       if (!res.success) throw new Error(res.error)
       return res.data
     },
@@ -366,6 +366,52 @@ export function useGeneratePrompt() {
       const res = await api.lmStudioGeneratePrompt({ sceneText, language, storyTitle, illustrationStyle })
       if (!res.success) throw new Error(res.error)
       return res.data  // string
+    },
+  })
+}
+
+// ── Style preset hooks ─────────────────────────────────────────────────────────
+
+/** Update the illustration style preset for the current project. */
+export function useUpdateProjectStyle() {
+  const patchCurrentProject = useStore(s => s.patchCurrentProject)
+
+  return useMutation({
+    mutationFn: async ({ projectId, styleId, illustrationStyle, clearPrompts }) => {
+      const res = await api.storyUpdateStyle({ projectId, styleId, illustrationStyle, clearPrompts })
+      if (!res.success) throw new Error(res.error)
+      return res.data  // full updated project
+    },
+    onSuccess: (project) => {
+      patchCurrentProject(project)
+    },
+  })
+}
+
+/** Generate AI preview images for all style presets that don't have one yet. */
+export function useGenerateStylePreviews() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await api.styleGeneratePreviews()
+      if (!res.success) throw new Error(res.error)
+      return res.data  // [{id, imagePath?, skipped?, error?}]
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['stylePreviews'] })
+    },
+  })
+}
+
+/** Return { id: absoluteFilePath | null } map for all 8 style presets. */
+export function useStylePreviews() {
+  return useQuery({
+    queryKey: ['stylePreviews'],
+    queryFn: async () => {
+      const res = await api.styleListPreviews()
+      if (!res.success) throw new Error(res.error)
+      return res.data  // { id: path | null }
     },
   })
 }

@@ -4,20 +4,25 @@ import React, { useState, useRef } from 'react'
 import useStore from '../store/useStore'
 import SceneList from '../components/SceneList'
 import SceneEditor from '../components/SceneEditor'
-import { useRenameProject } from '../hooks/useIPC'
+import StylePicker from '../components/StylePicker'
+import { useRenameProject, useUpdateProjectStyle } from '../hooks/useIPC'
+import { STYLE_PRESETS } from '../utils/stylePresets'
 
 const LANG_FLAG = { 'nl-NL': '🇳🇱', 'zh-CN': '🇨🇳' }
 const LANG_LABEL = { 'nl-NL': 'Nederlands', 'zh-CN': 'Chinese' }
 
 export default function StoryEditor() {
-  const { currentProject, updateProjectField } = useStore(s => ({
+  const { currentProject, updateProjectField, patchCurrentProject } = useStore(s => ({
     currentProject: s.currentProject,
     updateProjectField: s.updateProjectField,
+    patchCurrentProject: s.patchCurrentProject,
   }))
   const renameProject = useRenameProject()
+  const updateProjectStyle = useUpdateProjectStyle()
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const renameDoneRef = useRef(false)
+  const [showStylePicker, setShowStylePicker] = useState(false)
 
   function startRename() {
     setRenameValue(currentProject.name)
@@ -53,6 +58,17 @@ export default function StoryEditor() {
   }
 
   const readyCount = currentProject.scenes.filter(s => s.status === 'ready').length
+  const currentStyleId = currentProject.style?.styleId || 'sweet'
+  const currentStylePreset = STYLE_PRESETS.find(p => p.id === currentStyleId) || STYLE_PRESETS[0]
+
+  function handleStyleSelect(preset, clearPrompts) {
+    updateProjectStyle.mutate({
+      projectId: currentProject.id,
+      styleId: preset.id,
+      illustrationStyle: preset.prompt,
+      clearPrompts: !!clearPrompts,
+    })
+  }
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -88,6 +104,17 @@ export default function StoryEditor() {
           <span className="text-xs font-bold text-gray-600">{LANG_LABEL[currentProject.language]}</span>
         </div>
 
+        {/* Illustration style button */}
+        <button
+          onClick={() => setShowStylePicker(true)}
+          className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 rounded-xl px-3 py-1.5 transition-colors"
+          title="Change illustration style"
+        >
+          <span className="text-sm">{currentStylePreset.emoji}</span>
+          <span className="text-xs font-bold text-gray-600">{currentStylePreset.label}</span>
+          <span className="text-gray-400 text-xs">▾</span>
+        </button>
+
         {/* Active narrator toggle */}
         <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
           {['daughter1', 'daughter2'].map(d => {
@@ -119,6 +146,15 @@ export default function StoryEditor() {
         <SceneList />
         <SceneEditor />
       </div>
+
+      {showStylePicker && (
+        <StylePicker
+          selectedStyleId={currentStyleId}
+          onSelect={handleStyleSelect}
+          onClose={() => setShowStylePicker(false)}
+          showResetOption={true}
+        />
+      )}
     </div>
   )
 }

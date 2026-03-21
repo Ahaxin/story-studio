@@ -21,7 +21,8 @@ function createProject(name, language = 'nl-NL') {
     language,
     createdAt: new Date().toISOString(),
     style: {
-      illustrationStyle: "watercolor children's book, soft pastel colors, friendly",
+      styleId: 'sweet',
+      illustrationStyle: "watercolor children's book, soft pastel colors, friendly, warm and cozy",
       daughter1: {
         name: '',
         voiceEngine: 'piper',

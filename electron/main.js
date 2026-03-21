@@ -88,13 +88,17 @@ function mergeVoiceSettings(project) {
 }
 
 // story:create — Create new project folder + project.json
-ipcMain.handle('story:create', async (event, { name, language, scenes }) => {
+ipcMain.handle('story:create', async (event, { name, language, scenes, illustrationStyle, styleId }) => {
   try {
     const { createProject } = require('../src/utils/schema')
     const project = createProject(name, language)
 
     // Populate daughter voice profiles from electron-store settings
     mergeVoiceSettings(project)
+
+    // Apply style preset if provided
+    if (illustrationStyle) project.style.illustrationStyle = illustrationStyle
+    if (styleId) project.style.styleId = styleId
 
     // Attach pre-split scenes — run through createScene() to ensure UUIDs + all fields
     if (scenes && Array.isArray(scenes)) {
@@ -167,6 +171,81 @@ ipcMain.handle('story:rename', async (event, { projectId, name }) => {
 
     writeProjectJson(projectId, project)
     return { success: true, data: coverScene || null }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// story:update-style — Change the illustration style preset for a project
+ipcMain.handle('story:update-style', async (event, { projectId, styleId, illustrationStyle, clearPrompts }) => {
+  try {
+    const project = readProjectJson(projectId)
+    mergeVoiceSettings(project)
+    project.style.styleId = styleId
+    project.style.illustrationStyle = illustrationStyle
+    if (clearPrompts) {
+      for (const scene of project.scenes) {
+        scene.illustrationPrompt = ''
+      }
+    }
+    ensureIllustrationPrompts(project)
+    writeProjectJson(projectId, project)
+    return { success: true, data: project }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// style:list-previews — Return {id: absoluteFilePath | null} for all 8 style presets
+ipcMain.handle('style:list-previews', async () => {
+  try {
+    const { STYLE_PRESETS } = require('../src/utils/stylePresets')
+    const previewsDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'voices', 'style-previews')
+      : path.join(__dirname, '..', 'voices', 'style-previews')
+
+    const result = {}
+    for (const preset of STYLE_PRESETS) {
+      const filePath = path.join(previewsDir, `${preset.id}.png`)
+      result[preset.id] = fs.existsSync(filePath) ? filePath : null
+    }
+    return { success: true, data: result }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+// style:generate-previews — Generate missing preview images for all style presets
+ipcMain.handle('style:generate-previews', async () => {
+  try {
+    const { STYLE_PRESETS } = require('../src/utils/stylePresets')
+    const { generatePortrait } = require('../src/utils/nanoBanana')
+
+    const previewsDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'voices', 'style-previews')
+      : path.join(__dirname, '..', 'voices', 'style-previews')
+    fs.mkdirSync(previewsDir, { recursive: true })
+
+    const apiKey = store.get('nanoBananaApiKey') || process.env.NANO_BANANA_API_KEY
+
+    const results = []
+    for (const preset of STYLE_PRESETS) {
+      const filePath = path.join(previewsDir, `${preset.id}.png`)
+      if (fs.existsSync(filePath)) {
+        results.push({ id: preset.id, imagePath: filePath, skipped: true })
+        continue
+      }
+      try {
+        const previewPrompt = `children's book illustration, ${preset.prompt}, a young girl discovering a magical glowing flower in an enchanted forest, warm magical light, safe for kids aged 4-10`
+        await generatePortrait(previewPrompt, filePath, apiKey)
+        results.push({ id: preset.id, imagePath: filePath })
+        console.log(`[style-previews] Generated preview for: ${preset.id}`)
+      } catch (err) {
+        console.warn(`[style-previews] Failed to generate preview for ${preset.id}:`, err.message)
+        results.push({ id: preset.id, error: err.message })
+      }
+    }
+    return { success: true, data: results }
   } catch (err) {
     return { success: false, error: err.message }
   }

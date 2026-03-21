@@ -51,4 +51,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lmStudioStatus:          ()     => ipcRenderer.invoke('lmstudio:status'),
   lmStudioGenerateStory:   (args) => ipcRenderer.invoke('lmstudio:generate-story', args),
   lmStudioGeneratePrompt:  (args) => ipcRenderer.invoke('lmstudio:generate-prompt', args),
+
+  // Style presets
+  storyUpdateStyle:       (args) => ipcRenderer.invoke('story:update-style', args),
+  styleGeneratePreviews:  ()     => ipcRenderer.invoke('style:generate-previews'),
+  styleListPreviews:      ()     => ipcRenderer.invoke('style:list-previews'),
 })

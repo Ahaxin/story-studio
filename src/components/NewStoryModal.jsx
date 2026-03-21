@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import useStore from '../store/useStore'
 import { useCreateProject, useGenerateStory, useLmStudioStatus } from '../hooks/useIPC'
+import { STYLE_PRESETS } from '../utils/stylePresets'
+import StylePicker from './StylePicker'
 
 // storySplitter runs in renderer just for preview — actual write happens via IPC
 function splitPreview(text) {
@@ -26,6 +28,8 @@ export default function NewStoryModal() {
   const textareaRef = useRef(null)
   const [language, setLanguage] = useState('nl-NL')
   const [narrator, setNarrator] = useState('daughter1')
+  const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0])
+  const [showStylePicker, setShowStylePicker] = useState(false)
 
   // Paste tab state
   const [storyText, setStoryText] = useState('')
@@ -113,7 +117,13 @@ export default function NewStoryModal() {
     const scenes = [coverScene, ...storyScenes]
 
     try {
-      await createProject.mutateAsync({ name: name.trim(), language, scenes })
+      await createProject.mutateAsync({
+        name: name.trim(),
+        language,
+        scenes,
+        styleId: selectedStyle.id,
+        illustrationStyle: selectedStyle.prompt,
+      })
       closeNewStoryModal()
     } catch (err) {
       setError(err.message)
@@ -214,7 +224,31 @@ export default function NewStoryModal() {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Illustration Style</label>
+                <button
+                  onClick={() => setShowStylePicker(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-story-purple/50 transition-colors text-left"
+                >
+                  <span className="text-xl">{selectedStyle.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 text-sm">{selectedStyle.label}</p>
+                    <p className="text-xs text-gray-400">{selectedStyle.description}</p>
+                  </div>
+                  <span className="text-gray-400 text-xs font-medium shrink-0">Change ▾</span>
+                </button>
+              </div>
             </div>
+          )}
+
+          {showStylePicker && (
+            <StylePicker
+              selectedStyleId={selectedStyle.id}
+              onSelect={(preset) => setSelectedStyle(preset)}
+              onClose={() => setShowStylePicker(false)}
+              showResetOption={false}
+            />
           )}
 
           {/* ── Step 2: tab toggle + content ── */}
