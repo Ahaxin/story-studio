@@ -152,7 +152,7 @@ export default function NewStoryModal() {
       if (result.warning) {
         setAutoDiscoverError(true)
       } else {
-        setDiscoveredChars(result.added ?? [])
+        setDiscoveredChars((result.added ?? []).map((c, idx) => ({ ...c, _key: `${c.name}-${idx}` })))
       }
     } catch (err) {
       setAutoDiscoverError(true)
@@ -480,7 +480,7 @@ export default function NewStoryModal() {
                   </div>
                   <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
                     {discoveredChars.map((char, i) => (
-                      <div key={i} className="relative border-2 border-gray-200 rounded-2xl overflow-hidden">
+                      <div key={char._key} className="relative border-2 border-gray-200 rounded-2xl overflow-hidden">
                         {/* Remove button */}
                         <button
                           onClick={() => setDiscoveredChars(prev => prev.filter((_, idx) => idx !== i))}
