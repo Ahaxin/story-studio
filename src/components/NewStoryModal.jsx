@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import useStore from '../store/useStore'
-import { useCreateProject, useGenerateStory, useLmStudioStatus } from '../hooks/useIPC'
+import { useCreateProject, useGenerateStory, useLmStudioStatus, useAutoDiscoverCharacters, useSaveDiscoveredCharacters, useRegeneratePortrait } from '../hooks/useIPC'
 import { STYLE_PRESETS } from '../utils/stylePresets'
 import StylePicker from './StylePicker'
 
@@ -20,6 +20,9 @@ export default function NewStoryModal() {
   const createProject = useCreateProject()
   const generateStory = useGenerateStory()
   const { data: lmStudioData } = useLmStudioStatus()
+  const autoDiscover = useAutoDiscoverCharacters()
+  const saveDiscovered = useSaveDiscoveredCharacters()
+  const regeneratePortrait = useRegeneratePortrait()
 
   const [step, setStep] = useState(1)           // 1 = info, 2 = text/AI
   const [tab, setTab] = useState('paste')        // 'paste' | 'ai'
@@ -44,6 +47,15 @@ export default function NewStoryModal() {
   const [genProgress, setGenProgress] = useState(0)  // 0–100
 
   const [error, setError] = useState('')
+
+  // Step 3: character review
+  const [discoveredChars, setDiscoveredChars] = useState([])   // [{name, imagePath, description}]
+  const [isDiscovering, setIsDiscovering] = useState(false)
+  const [autoDiscoverError, setAutoDiscoverError] = useState(false)
+  const [regeneratingIndices, setRegeneratingIndices] = useState(new Set())
+  const [cardErrors, setCardErrors] = useState({})             // { [cardIndex]: string }
+  const [saveError, setSaveError] = useState('')
+  const [bustKeys, setBustKeys] = useState({})                 // { [cardIndex]: number } — forces img remount on regenerate
 
   // ── Paste tab: split ──────────────────────────────────────────────────────
   function handleSplit() {
@@ -95,8 +107,9 @@ export default function NewStoryModal() {
   // ── Create project ────────────────────────────────────────────────────────
   async function handleCreate() {
     setError('')
+    setSaveError('')
 
-    let rawScenes   // array of { text, illustrationPrompt? }
+    let rawScenes
     if (tab === 'paste') {
       if (!splitResult) return
       rawScenes = splitResult.map(text => ({ text, illustrationPrompt: '' }))
@@ -105,7 +118,6 @@ export default function NewStoryModal() {
       rawScenes = aiResult.scenes
     }
 
-    // Prepend a dedicated cover scene (index 0) using the story title.
     const coverScene = { text: name.trim(), index: 0, narrator, transition: 'zoom', illustrationPrompt: '' }
     const storyScenes = rawScenes.map((s, i) => ({
       text: s.text,
@@ -116,17 +128,65 @@ export default function NewStoryModal() {
     }))
     const scenes = [coverScene, ...storyScenes]
 
+    let project
     try {
-      await createProject.mutateAsync({
+      project = await createProject.mutateAsync({
         name: name.trim(),
         language,
         scenes,
         styleId: selectedStyle.id,
         illustrationStyle: selectedStyle.prompt,
       })
-      closeNewStoryModal()
     } catch (err) {
       setError(err.message)
+      return
+    }
+
+    // Advance to step 3 and run auto-discover
+    setStep(3)
+    setIsDiscovering(true)
+    setAutoDiscoverError(false)
+    setDiscoveredChars([])
+    try {
+      const result = await autoDiscover.mutateAsync({ projectId: project.id })
+      if (result.warning) {
+        setAutoDiscoverError(true)
+      } else {
+        setDiscoveredChars(result.added ?? [])
+      }
+    } catch (err) {
+      setAutoDiscoverError(true)
+    } finally {
+      setIsDiscovering(false)
+    }
+  }
+
+  async function handleRegenerate(i) {
+    setCardErrors(prev => { const e = { ...prev }; delete e[i]; return e })
+    setRegeneratingIndices(prev => new Set([...prev, i]))
+    try {
+      const result = await regeneratePortrait.mutateAsync({
+        name: discoveredChars[i].name,
+        description: discoveredChars[i].description,
+      })
+      setDiscoveredChars(prev => prev.map((c, idx) =>
+        idx === i ? { ...c, imagePath: result.imagePath } : c
+      ))
+      setBustKeys(prev => ({ ...prev, [i]: (prev[i] ?? 0) + 1 }))
+    } catch (err) {
+      setCardErrors(prev => ({ ...prev, [i]: 'Regeneration failed — try again' }))
+    } finally {
+      setRegeneratingIndices(prev => { const s = new Set(prev); s.delete(i); return s })
+    }
+  }
+
+  async function handleSaveCharacters() {
+    setSaveError('')
+    try {
+      await saveDiscovered.mutateAsync({ characters: discoveredChars })
+      closeNewStoryModal()
+    } catch (err) {
+      setSaveError('Failed to save characters — try again.')
     }
   }
 
@@ -160,7 +220,7 @@ export default function NewStoryModal() {
         <div className="bg-gradient-to-r from-story-purple to-story-purple-light px-8 py-6">
           <h2 className="text-2xl font-black text-white">✨ New Story</h2>
           <p className="text-purple-200 text-sm mt-1 font-medium">
-            Step {step} of 2 — {step === 1 ? 'Story details' : 'Story content'}
+            Step {step} of 3 — {step === 1 ? 'Story details' : step === 2 ? 'Story content' : 'Characters'}
           </p>
         </div>
 
@@ -389,6 +449,108 @@ export default function NewStoryModal() {
             </div>
           )}
 
+          {/* ── Step 3: Character review ── */}
+          {step === 3 && (
+            <div className="space-y-4">
+              {isDiscovering ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <svg className="animate-spin h-8 w-8 text-story-purple" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  <p className="text-sm font-bold text-gray-500">Discovering characters…</p>
+                </div>
+              ) : autoDiscoverError ? (
+                <div className="text-center py-8 space-y-2">
+                  <div className="text-4xl">⚠️</div>
+                  <p className="font-bold text-gray-700">Character detection unavailable</p>
+                  <p className="text-sm text-gray-400">LM Studio is offline. You can add characters manually in Settings → Character References.</p>
+                </div>
+              ) : discoveredChars.length === 0 ? (
+                <div className="text-center py-8 space-y-2">
+                  <div className="text-4xl">🎭</div>
+                  <p className="font-bold text-gray-700">No characters found</p>
+                  <p className="text-sm text-gray-400">No named characters were detected. You can add them manually in Settings → Character References.</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h3 className="font-black text-gray-800 text-base">🎭 Meet the Characters</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Review the portraits before saving to your character library.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
+                    {discoveredChars.map((char, i) => (
+                      <div key={i} className="relative border-2 border-gray-200 rounded-2xl overflow-hidden">
+                        {/* Remove button */}
+                        <button
+                          onClick={() => setDiscoveredChars(prev => prev.filter((_, idx) => idx !== i))}
+                          className="absolute top-1.5 right-1.5 z-10 bg-white/80 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold transition-colors"
+                          title="Remove character"
+                        >
+                          ×
+                        </button>
+                        {/* Portrait */}
+                        <div className="aspect-square bg-gray-100 overflow-hidden">
+                          {char.imagePath ? (
+                            <img
+                              key={bustKeys[i] ?? 0}
+                              src={`localfile:///${char.imagePath.replace(/\\/g, '/')}`}
+                              alt={char.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-3xl">🎭</div>
+                          )}
+                        </div>
+                        {/* Card body */}
+                        <div className="p-2 space-y-1.5">
+                          <input
+                            type="text"
+                            value={char.name}
+                            onChange={e => setDiscoveredChars(prev => prev.map((c, idx) =>
+                              idx === i ? { ...c, name: e.target.value } : c
+                            ))}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-800 focus:border-story-purple focus:outline-none"
+                          />
+                          <textarea
+                            value={char.description}
+                            onChange={e => setDiscoveredChars(prev => prev.map((c, idx) =>
+                              idx === i ? { ...c, description: e.target.value } : c
+                            ))}
+                            rows={2}
+                            placeholder="Appearance description…"
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-600 focus:border-story-purple focus:outline-none resize-none"
+                          />
+                          {cardErrors[i] && (
+                            <p className="text-xs text-red-500">{cardErrors[i]}</p>
+                          )}
+                          <button
+                            onClick={() => handleRegenerate(i)}
+                            disabled={regeneratingIndices.has(i)}
+                            className="w-full flex items-center justify-center gap-1.5 text-xs font-bold text-story-purple hover:bg-purple-50 border border-story-purple/30 rounded-lg py-1 transition-colors disabled:opacity-50"
+                          >
+                            {regeneratingIndices.has(i) ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                </svg>
+                                Regenerating…
+                              </>
+                            ) : '↻ Regenerate'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {saveError && (
+                <p className="text-xs text-red-500 text-center">{saveError}</p>
+              )}
+            </div>
+          )}
+
           {/* General error */}
           {error && (
             <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-medium">
@@ -432,6 +594,25 @@ export default function NewStoryModal() {
                 {createProject.isPending ? 'Creating…' : '🎬 Create Story'}
               </button>
             </>
+          )}
+
+          {step === 3 && (
+            discoveredChars.length > 0 ? (
+              <button
+                onClick={handleSaveCharacters}
+                disabled={isDiscovering || saveDiscovered.isPending}
+                className="px-6 py-2.5 rounded-xl bg-story-purple text-white font-bold hover:bg-story-purple-dark transition-colors disabled:opacity-40"
+              >
+                {saveDiscovered.isPending ? 'Saving…' : `Save ${discoveredChars.length} Character${discoveredChars.length === 1 ? '' : 's'} →`}
+              </button>
+            ) : (
+              <button
+                onClick={closeNewStoryModal}
+                className="px-6 py-2.5 rounded-xl bg-story-purple text-white font-bold hover:bg-story-purple-dark transition-colors"
+              >
+                Close &amp; Start Editing →
+              </button>
+            )
           )}
         </div>
       </div>
