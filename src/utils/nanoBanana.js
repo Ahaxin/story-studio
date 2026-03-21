@@ -15,14 +15,17 @@ const NANO_BANANA_MODEL = 'gemini-3.1-flash-image-preview'
  * Scene 0 gets a book cover with the story title.
  * All other scenes share a consistent inner-page frame style.
  *
+ * NOTE: Character consistency is NOT embedded here — it is injected as a separate
+ * Gemini API text part by the scene:generate-illustration IPC handler at generation
+ * time so it is always fresh (covers auto-discovered characters too).
+ *
  * @param {string} sceneText
  * @param {object} style — project.style
- * @param {string} avatarCharacterPrompt — narrator's physical description (always passed, not gated on avatarMode)
+ * @param {string} avatarCharacterPrompt — narrator's physical description
  * @param {number} sceneIndex — 0-based; 0 = cover page
  * @param {string} storyTitle — used on the cover
- * @param {Array<{name: string, description: string}>} characters — additional named characters with locked appearances
  */
-function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneIndex = 0, storyTitle = '', characters = []) {
+function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneIndex = 0, storyTitle = '') {
   const artStyle = style?.illustrationStyle ||
     "watercolor children's book, soft pastel colors, friendly"
 
@@ -62,25 +65,8 @@ function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneInd
       'wide landscape scene, characters and setting clearly visible',
     ]
 
-    // Character consistency block — every named character gets a locked appearance description.
-    // Gemini must keep face, hair, and skin tone identical across all scenes;
-    // only pose, expression, and clothing adapt to the scene action.
-    const charBlocks = []
     if (avatarCharacterPrompt && avatarCharacterPrompt.trim()) {
-      charBlocks.push(avatarCharacterPrompt.trim())
-    }
-    for (const char of characters) {
-      if (char.description && char.description.trim()) {
-        charBlocks.push(`${char.name}: ${char.description.trim()}`)
-      }
-    }
-    if (charBlocks.length > 0) {
-      parts.push(
-        'IMPORTANT — character appearance must stay IDENTICAL across every scene ' +
-        '(same face shape, eye color, hair color and style, skin tone, body proportions). ' +
-        'Only the pose, expression, and clothing change to match the scene action. ' +
-        'Characters: ' + charBlocks.join(' | ')
-      )
+      parts.push(avatarCharacterPrompt.trim())
     }
 
     const sceneSummary = sceneText.length > 200
@@ -106,11 +92,12 @@ function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneInd
  * Generate an illustration via Nano Banana (Gemini image generation API).
  * Returns the local file path of the saved PNG.
  *
- * @param {string[]} referenceImagePaths — array of paths to character reference images (PNG/JPG/WebP).
- *   Each image is sent as an inline part before the text prompt so Gemini can match character looks.
- *   Pass an empty array when no reference images are needed.
+ * @param {string[]} referenceImagePaths — character reference images sent before the prompt.
+ * @param {string} characterContext — optional character consistency directive injected as a
+ *   separate text part between the reference guidance and the main scene prompt.
+ *   Built fresh by the IPC handler so it always includes auto-discovered characters.
  */
-async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey, referenceImagePaths = []) {
+async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey, referenceImagePaths = [], characterContext = '') {
   if (!apiKey) apiKey = process.env.NANO_BANANA_API_KEY
   if (!apiKey) {
     throw new Error('Nano Banana API key is not set. Go to Settings → API Keys to add it.')
@@ -147,6 +134,11 @@ async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey
         'Instead, choose clothing that fits the scene\'s environment and activity. ' +
         'Show a natural posture and gesture that matches what the character is doing in the scene.',
     })
+  }
+
+  // Character consistency directive — injected fresh by the IPC handler, always current
+  if (characterContext && characterContext.trim()) {
+    parts.push({ text: characterContext.trim() })
   }
 
   parts.push({ text: prompt })

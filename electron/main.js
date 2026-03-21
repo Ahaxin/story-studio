@@ -123,13 +123,15 @@ ipcMain.handle('story:create', async (event, { name, language, scenes }) => {
   }
 })
 
-// Populate missing illustrationPrompts so every scene has a default prompt to display
+// Populate missing illustrationPrompts so every scene has a default prompt to display.
+// Character consistency is NOT embedded here — it is injected as a fresh Gemini API
+// part at generation time by scene:generate-illustration.
 function ensureIllustrationPrompts(project) {
   const { buildScenePrompt } = require('../src/utils/nanoBanana')
   for (const scene of project.scenes) {
     if (!scene.illustrationPrompt || !scene.illustrationPrompt.trim()) {
       const narrator = project.style[scene.narrator] || project.style[project.style.activeNarrator]
-      const avatarPrompt = narrator?.avatarMode === 'generated' ? narrator.characterPrompt : ''
+      const avatarPrompt = narrator?.characterPrompt || ''   // always pass, no avatarMode gate
       scene.illustrationPrompt = buildScenePrompt(scene.text, project.style, avatarPrompt, scene.index, project.name)
     }
   }
@@ -159,7 +161,7 @@ ipcMain.handle('story:rename', async (event, { projectId, name }) => {
       const { buildScenePrompt } = require('../src/utils/nanoBanana')
       mergeVoiceSettings(project)
       const narrator = project.style[coverScene.narrator] || project.style[project.style.activeNarrator]
-      const avatarPrompt = narrator?.avatarMode === 'generated' ? narrator.characterPrompt : ''
+      const avatarPrompt = narrator?.characterPrompt || ''   // always pass, no avatarMode gate
       coverScene.illustrationPrompt = buildScenePrompt(coverScene.text, project.style, avatarPrompt, 0, project.name)
     }
 
@@ -244,41 +246,53 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
       console.log(`[generate-illustration] Using ${refPaths.length} reference image(s):`, refPaths.map(p => path.basename(p)))
     }
 
-    // Use existing/custom prompt if set by the user, otherwise auto-build
+    // Build/use scene description prompt.
+    // Use the stored prompt if it exists (user-edited or pre-built), otherwise generate one.
     if (!scene.illustrationPrompt || !scene.illustrationPrompt.trim()) {
-      // Always pass narrator's characterPrompt (regardless of avatarMode) for visual consistency
       const avatarPrompt = narrator?.characterPrompt || ''
+      scene.illustrationPrompt = buildScenePrompt(scene.text, project.style, avatarPrompt, scene.index, project.name)
+    }
+    const scenePrompt = scene.illustrationPrompt
 
-      // Build character descriptions for non-narrator daughters + library characters in this scene
-      const charDescriptions = []
+    // Build character consistency context — ALWAYS fresh from store, injected as a separate
+    // Gemini API part so it covers auto-discovered characters regardless of when the story
+    // was created or whether the scene prompt was pre-built (paste text) or AI-generated.
+    const charContextParts = []
+    if (scene.index > 0) {
+      if (narrator?.characterPrompt?.trim()) {
+        charContextParts.push(narrator.characterPrompt.trim())
+      }
       for (const [key, d] of Object.entries(allDaughters)) {
         if (key !== narratorKey && d?.name && d?.characterPrompt && sceneContent.includes(d.name)) {
-          charDescriptions.push({ name: d.name, description: d.characterPrompt })
+          charContextParts.push(`${d.name}: ${d.characterPrompt.trim()}`)
         }
       }
       for (const char of allCharacters) {
         if (char.description && char.name && sceneContent.includes(char.name)) {
-          charDescriptions.push({ name: char.name, description: char.description })
+          charContextParts.push(`${char.name}: ${char.description.trim()}`)
         }
       }
-
-      scene.illustrationPrompt = buildScenePrompt(scene.text, project.style, avatarPrompt, scene.index, project.name, charDescriptions)
     }
-    const prompt = scene.illustrationPrompt
+    const characterContext = charContextParts.length > 0
+      ? 'IMPORTANT — character appearance must stay IDENTICAL across every scene ' +
+        '(same face shape, eye color, hair color and style, skin tone, body proportions). ' +
+        'Only pose, expression, and clothing change to match the scene action. ' +
+        'Characters: ' + charContextParts.join(' | ')
+      : ''
 
     const sceneDirName = `scene_${sceneId}`
     const sceneDir = path.join(PROJECTS_DIR, projectId, 'scenes', sceneDirName)
     fs.mkdirSync(sceneDir, { recursive: true })
 
     const apiKey = store.get('nanoBananaApiKey') || process.env.NANO_BANANA_API_KEY
-    const illustrationPath = await generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey, refPaths)
+    const illustrationPath = await generateIllustration(scenePrompt, projectId, sceneId, sceneDir, apiKey, refPaths, characterContext)
 
     // Re-read project fresh before writing to avoid overwriting concurrent narration writes
     const freshProject1 = readProjectJson(projectId)
     const freshScene1 = freshProject1.scenes.find(s => s.id === sceneId)
     if (freshScene1) {
       freshScene1.illustrationPath = illustrationPath
-      freshScene1.illustrationPrompt = prompt
+      freshScene1.illustrationPrompt = scenePrompt  // save the clean scene prompt (not the char context)
       freshScene1.status = (freshScene1.narrationPath || freshScene1.recordingPath) ? 'ready' : 'illustration-done'
       writeProjectJson(projectId, freshProject1)
       return { success: true, data: freshScene1 }
