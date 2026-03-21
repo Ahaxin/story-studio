@@ -619,6 +619,91 @@ ipcMain.handle('character:remove', async (event, { name }) => {
   }
 })
 
+// characters:auto-discover — Scan story text, extract named characters via LM Studio,
+// generate a portrait reference image for each new character, save to library.
+ipcMain.handle('characters:auto-discover', async (event, { projectId }) => {
+  try {
+    const project = readProjectJson(projectId)
+    const storyText = project.scenes.map(s => s.text).join('\n\n')
+
+    const { extractCharacters } = require('../src/utils/lmStudio')
+    const { generatePortrait } = require('../src/utils/nanoBanana')
+
+    // Extract named characters from story using LM Studio
+    let extracted = []
+    try {
+      extracted = await extractCharacters(storyText)
+      console.log(`[auto-discover] LM Studio extracted ${extracted.length} character(s):`, extracted.map(c => c.name))
+    } catch (err) {
+      console.warn('[auto-discover] Character extraction failed:', err.message)
+      return { success: true, data: { added: [], skipped: [], warning: `LM Studio unavailable: ${err.message}` } }
+    }
+
+    // Build set of already-known names (daughters + existing library) — skip these
+    const daughters = store.get('daughters') || {}
+    const knownNames = new Set([
+      ...Object.values(daughters).map(d => d.name).filter(Boolean),
+      ...store.get('characters', []).map(c => c.name),
+    ])
+
+    const newChars = extracted.filter(c => c.name && !knownNames.has(c.name))
+    const skipped = extracted.filter(c => c.name && knownNames.has(c.name)).map(c => c.name)
+
+    if (newChars.length === 0) {
+      return { success: true, data: { added: [], skipped } }
+    }
+
+    // Ensure characters directory exists
+    const voicesDir = app.isPackaged
+      ? path.join(app.getPath('userData'), 'voices')
+      : path.join(__dirname, '..', 'voices')
+    const charactersDir = path.join(voicesDir, 'characters')
+    fs.mkdirSync(charactersDir, { recursive: true })
+
+    const apiKey = store.get('nanoBananaApiKey') || process.env.NANO_BANANA_API_KEY
+
+    const added = []
+    for (const char of newChars) {
+      try {
+        // Build a portrait prompt: neutral standing pose, plain background, clear face
+        const portraitPrompt = [
+          "children's book watercolor character portrait",
+          `a character named ${char.name}`,
+          char.description ? char.description : 'friendly child-appropriate appearance',
+          'full body standing, facing viewer',
+          'plain cream or white background',
+          'clear friendly face, expressive eyes',
+          'consistent character design for children\'s picture book',
+          "safe for kids aged 4-10, bright and cheerful",
+        ].join(', ')
+
+        const destPath = path.join(charactersDir, `${char.name}_reference.png`)
+        await generatePortrait(portraitPrompt, destPath, apiKey)
+
+        // Add to library (re-read fresh to avoid races with concurrent calls)
+        const freshChars = store.get('characters', [])
+        if (!freshChars.some(c => c.name === char.name)) {
+          store.set('characters', [...freshChars, {
+            name: char.name,
+            imagePath: destPath,
+            description: char.description || '',
+          }])
+        }
+
+        added.push({ name: char.name, imagePath: destPath, description: char.description || '' })
+        console.log(`[auto-discover] Portrait created for: ${char.name}`)
+      } catch (err) {
+        console.warn(`[auto-discover] Portrait failed for ${char.name}:`, err.message)
+        // Continue with remaining characters
+      }
+    }
+
+    return { success: true, data: { added, skipped } }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 // settings:get — Return value from electron-store
 ipcMain.handle('settings:get', async (event, { key }) => {
   try {

@@ -198,4 +198,51 @@ async function generateIllustration(prompt, projectId, sceneId, sceneDir, apiKey
   return outputPath
 }
 
-module.exports = { generateIllustration, buildScenePrompt }
+/**
+ * Generate a character reference portrait and save it to a specified file path.
+ * Uses a 1:1 aspect ratio — portraits are square.
+ * No reference images are passed (this IS the reference being created).
+ *
+ * @param {string} prompt — portrait prompt
+ * @param {string} outputPath — absolute path to save the PNG
+ * @param {string} apiKey
+ */
+async function generatePortrait(prompt, outputPath, apiKey) {
+  if (!apiKey) apiKey = process.env.NANO_BANANA_API_KEY
+  if (!apiKey) throw new Error('Nano Banana API key is not set.')
+
+  console.log(`[nanoBanana] Generating portrait: ${prompt.substring(0, 80)}...`)
+
+  const url = `${GEMINI_BASE_URL}/models/${NANO_BANANA_MODEL}:generateContent?key=${apiKey}`
+  let response
+  try {
+    response = await axios.post(
+      url,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          imageConfig: { aspectRatio: '1:1' },
+        },
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 120000 }
+    )
+  } catch (err) {
+    const apiError = err.response?.data?.error?.message || err.response?.data
+    if (apiError) throw new Error(`Nano Banana API error: ${typeof apiError === 'string' ? apiError : JSON.stringify(apiError)}`)
+    throw err
+  }
+
+  const responseParts = response.data?.candidates?.[0]?.content?.parts
+  const imagePart = responseParts?.find(p => p.inlineData)
+  if (!imagePart?.inlineData?.data) {
+    throw new Error(`Nano Banana returned no image for portrait. Response: ${JSON.stringify(response.data).substring(0, 200)}`)
+  }
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+  fs.writeFileSync(outputPath, Buffer.from(imagePart.inlineData.data, 'base64'))
+  console.log(`[nanoBanana] Portrait saved to ${outputPath}`)
+  return outputPath
+}
+
+module.exports = { generateIllustration, buildScenePrompt, generatePortrait }

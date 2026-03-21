@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import useStore from '../store/useStore'
-import { useGenerateIllustration, useGenerateNarration } from '../hooks/useIPC'
+import { useGenerateIllustration, useGenerateNarration, useAutoDiscoverCharacters } from '../hooks/useIPC'
 
 const STATUS_CONFIG = {
   pending:           { label: 'Pending',    color: 'bg-gray-100 text-gray-500' },
@@ -16,22 +16,36 @@ export default function SceneList() {
   const genIllustration = useGenerateIllustration()
   const genNarration = useGenerateNarration()
 
-  const [generating, setGenerating] = useState(false)
+  const autoDiscover = useAutoDiscoverCharacters()
+
+  const [generatingType, setGeneratingType] = useState(null) // null | 'discovering' | 'images' | 'sounds'
   const [genProgress, setGenProgress] = useState({ done: 0, total: 0 })
+  const [discoverResult, setDiscoverResult] = useState(null) // { added: [], skipped: [] } | null
 
   if (!currentProject) return null
   const { scenes } = currentProject
 
-  async function handleGenerateAll() {
-    const pending = scenes.filter(s => s.status === 'pending')
-    if (pending.length === 0) return
+  async function handleGenerateAllImages() {
+    const targets = scenes.filter(s => s.status === 'pending' || s.status === 'narration-done')
+    if (targets.length === 0) return
 
-    const total = pending.length * 2  // illustration + narration per scene
-    setGenerating(true)
-    setGenProgress({ done: 0, total })
+    // Step 1: Auto-discover characters and generate reference portraits for any new ones
+    setGeneratingType('discovering')
+    setDiscoverResult(null)
+    try {
+      const result = await autoDiscover.mutateAsync({ projectId: currentProject.id })
+      setDiscoverResult(result)
+      console.log(`[SceneList] Auto-discover: +${result.added.length} new, ${result.skipped.length} known`)
+    } catch (err) {
+      // Non-fatal — log and continue (LM Studio may be offline)
+      console.warn('[SceneList] Character auto-discover failed (continuing):', err.message)
+    }
 
-    // Pass 1: illustrations sequentially (avoids API rate-limit bursts)
-    for (const scene of pending) {
+    // Step 2: Generate illustrations for all pending scenes
+    setGeneratingType('images')
+    setGenProgress({ done: 0, total: targets.length })
+
+    for (const scene of targets) {
       try {
         await genIllustration.mutateAsync({ projectId: currentProject.id, sceneId: scene.id })
       } catch (err) {
@@ -40,11 +54,20 @@ export default function SceneList() {
       setGenProgress(p => ({ ...p, done: p.done + 1 }))
     }
 
-    // Pass 2: narrations in parallel (concurrency 3)
-    // ElevenLabs benefits from true parallelism; XTTS queues internally but still works.
+    setGeneratingType(null)
+  }
+
+  async function handleGenerateAllSounds() {
+    const targets = scenes.filter(s => s.status === 'pending' || s.status === 'illustration-done')
+    if (targets.length === 0) return
+
+    setGeneratingType('sounds')
     const CONCURRENCY = 3
-    for (let i = 0; i < pending.length; i += CONCURRENCY) {
-      const batch = pending.slice(i, i + CONCURRENCY)
+    setGenProgress({ done: 0, total: targets.length })
+
+    // ElevenLabs benefits from true parallelism; XTTS queues internally but still works.
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const batch = targets.slice(i, i + CONCURRENCY)
       await Promise.allSettled(
         batch.map(scene =>
           genNarration.mutateAsync({ projectId: currentProject.id, sceneId: scene.id })
@@ -54,7 +77,7 @@ export default function SceneList() {
       )
     }
 
-    setGenerating(false)
+    setGeneratingType(null)
   }
 
   function move(index, direction) {
@@ -63,7 +86,8 @@ export default function SceneList() {
     reorderScenes(index, toIndex)
   }
 
-  const pendingCount = scenes.filter(s => s.status === 'pending').length
+  const imagesNeededCount = scenes.filter(s => s.status === 'pending' || s.status === 'narration-done').length
+  const soundsNeededCount = scenes.filter(s => s.status === 'pending' || s.status === 'illustration-done').length
   const readyCount = scenes.filter(s => s.status === 'ready').length
 
   return (
@@ -77,22 +101,55 @@ export default function SceneList() {
           </span>
         </div>
 
-        {/* Generate All button */}
-        <button
-          onClick={handleGenerateAll}
-          disabled={generating || pendingCount === 0}
-          className="w-full bg-story-green hover:bg-story-green-dark disabled:opacity-40 text-white font-bold py-2 rounded-xl text-sm transition-colors"
-        >
-          {generating
-            ? `Generating… ${genProgress.done}/${genProgress.total} steps`
-            : `⚡ Generate All (${pendingCount} pending)`}
-        </button>
+        {/* Generate All Images / Sounds buttons */}
+        <div className="flex gap-1.5">
+          <button
+            onClick={handleGenerateAllImages}
+            disabled={!!generatingType || imagesNeededCount === 0}
+            className="flex-1 bg-story-green hover:bg-story-green-dark disabled:opacity-40 text-white font-bold py-2 rounded-xl text-xs transition-colors"
+          >
+            {generatingType === 'discovering'
+              ? '🔍 Characters…'
+              : generatingType === 'images'
+              ? `🖼️ ${genProgress.done}/${genProgress.total}`
+              : `🖼️ Images (${imagesNeededCount})`}
+          </button>
+          <button
+            onClick={handleGenerateAllSounds}
+            disabled={!!generatingType || soundsNeededCount === 0}
+            className="flex-1 bg-story-purple hover:bg-story-purple-dark disabled:opacity-40 text-white font-bold py-2 rounded-xl text-xs transition-colors"
+          >
+            {generatingType === 'sounds'
+              ? `🔊 ${genProgress.done}/${genProgress.total}`
+              : `🔊 Sounds (${soundsNeededCount})`}
+          </button>
+        </div>
 
         {/* Progress bar */}
-        {generating && (
+        {generatingType === 'discovering' && (
+          <div className="mt-2 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full bg-story-yellow animate-pulse" style={{ width: '100%' }} />
+          </div>
+        )}
+        {generatingType === 'images' && (
+          <>
+            {discoverResult && discoverResult.added.length > 0 && (
+              <p className="text-xs text-story-green font-medium mt-1.5">
+                ✨ {discoverResult.added.length} new character{discoverResult.added.length > 1 ? 's' : ''} found: {discoverResult.added.map(c => c.name).join(', ')}
+              </p>
+            )}
+            <div className="mt-2 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500 bg-story-green"
+                style={{ width: `${(genProgress.done / genProgress.total) * 100}%` }}
+              />
+            </div>
+          </>
+        )}
+        {generatingType === 'sounds' && (
           <div className="mt-2 bg-gray-200 rounded-full h-1.5 overflow-hidden">
             <div
-              className="bg-story-green h-full rounded-full transition-all duration-500"
+              className="h-full rounded-full transition-all duration-500 bg-story-purple"
               style={{ width: `${(genProgress.done / genProgress.total) * 100}%` }}
             />
           </div>

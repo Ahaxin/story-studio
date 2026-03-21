@@ -213,4 +213,69 @@ async function generateIllustrationPrompt({ sceneText, language, storyTitle, ill
   return prompt
 }
 
-module.exports = { checkLmStudioStatus, generateStory, generateIllustrationPrompt }
+/**
+ * Extract all named characters from a story with a brief visual description each.
+ * Requires LM Studio to be running with a model loaded.
+ * Throws on failure — caller should handle gracefully.
+ *
+ * @param {string} storyText — full story text (all scenes joined)
+ * @returns {Array<{name: string, description: string}>}
+ */
+async function extractCharacters(storyText) {
+  const systemPrompt =
+    'You are analyzing a children\'s story. ' +
+    'Extract all named characters — people or animals that have a personal name. ' +
+    'Do NOT include generic roles like "mother", "teacher", or "the farmer" unless they are also given a personal name. ' +
+    'For each character, write a brief visual description (hair, eyes, skin tone, general look) ' +
+    'suitable for a watercolor children\'s book illustration. ' +
+    'If the story does not describe them physically, infer a friendly child-appropriate appearance. ' +
+    'Reply with ONLY valid JSON.'
+
+  const res = await axios.post(
+    `${LM_STUDIO_BASE}/v1/chat/completions`,
+    {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Story:\n${storyText}\n\n/no_think` },
+      ],
+      temperature: 0.3,
+      max_tokens: 1024,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'characters',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              characters: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    description: { type: 'string' },
+                  },
+                  required: ['name', 'description'],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['characters'],
+            additionalProperties: false,
+          },
+        },
+      },
+    },
+    { timeout: 60000 }
+  )
+
+  const raw = res.data?.choices?.[0]?.message?.content || ''
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end <= start) throw new Error('Model returned invalid JSON for character extraction.')
+  const parsed = JSON.parse(raw.slice(start, end + 1))
+  return Array.isArray(parsed?.characters) ? parsed.characters.filter(c => c.name && c.name.trim()) : []
+}
+
+module.exports = { checkLmStudioStatus, generateStory, generateIllustrationPrompt, extractCharacters }

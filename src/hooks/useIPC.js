@@ -309,6 +309,25 @@ export function useRemoveCharacter() {
   })
 }
 
+/**
+ * Scan a project's story text, extract named characters via LM Studio,
+ * and generate a portrait reference image for each new character.
+ * On success, invalidates the character library query.
+ */
+export function useAutoDiscoverCharacters() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ projectId }) => {
+      const res = await api.characterAutoDiscover({ projectId })
+      if (!res.success) throw new Error(res.error)
+      return res.data  // { added: [{name, imagePath, description}], skipped: [names], warning? }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['characters'] })
+    },
+  })
+}
+
 // ── LM Studio hooks ───────────────────────────────────────────────────────────
 
 /** Check if LM Studio is running. Only refetches when manually triggered via refetch(). */

@@ -42,9 +42,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('xtts:status-update'),
 
   // Character reference library
-  characterList:   ()     => ipcRenderer.invoke('character:list'),
-  characterAdd:    (args) => ipcRenderer.invoke('character:add', args),
-  characterRemove: (args) => ipcRenderer.invoke('character:remove', args),
+  characterList:          ()     => ipcRenderer.invoke('character:list'),
+  characterAdd:           (args) => ipcRenderer.invoke('character:add', args),
+  characterRemove:        (args) => ipcRenderer.invoke('character:remove', args),
+  characterAutoDiscover:  (args) => ipcRenderer.invoke('characters:auto-discover', args),
 
   // LM Studio (local LLM)
   lmStudioStatus:          ()     => ipcRenderer.invoke('lmstudio:status'),
