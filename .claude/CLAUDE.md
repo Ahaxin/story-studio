@@ -5,6 +5,7 @@ All phases complete and running. App boots cleanly with `npm run dev`.
 XTTS venv installed at `resources/xtts_venv/`. XTTS auto-starts with Electron — do not start manually.
 ElevenLabs in-app voice cloning implemented and working (2026-03-14).
 Begonia (daughter1) switched to ElevenLabs engine with cloned voice.
+Character review modal implemented (2026-03-21): Step 3 of New Story wizard auto-discovers characters, shows portrait grid, lets user edit/regenerate before saving to global library.
 
 ## Stack
 - Electron 28 + React 18 + Vite 5 (Windows desktop)
@@ -28,7 +29,7 @@ src/
     useIPC.js   — React Query wrappers for all IPC calls
   components/
     Sidebar.jsx         — project list, + New Story, Export/Settings nav
-    NewStoryModal.jsx   — 2-step wizard: name/language → paste + split preview
+    NewStoryModal.jsx   — 3-step wizard: name/language/style → paste/AI → character review
     SceneList.jsx       — scrollable scene cards, status badges, Generate All
     SceneEditor.jsx     — illustration, text, narrator, audio, transitions, avatar
     VoiceRecorder.jsx   — MediaRecorder UI for XTTS voice sample capture
@@ -38,7 +39,9 @@ src/
     Settings.jsx        — API keys, daughter profiles, XTTS recorder + status
   utils/
     schema.js           — createProject() + createScene() factories
-    storySplitter.js    — splitByParagraph(), 5–15 scene enforcement
+    storySplitter.js    — splitByParagraph(), 5–25 scene enforcement
+    stylePresets.js     — ESM re-export of STYLE_PRESETS from stylePresetsData.json
+    stylePresetsData.json — 8 illustration style presets (loadable by both CJS require and ESM import)
     nanoBanana.js       — illustration API client + buildScenePrompt()
     tts.js              — Piper / Google Cloud TTS / XTTS v2 engines
     ffmpeg.js           — filter_complex video assembler + getAudioDuration()
@@ -74,6 +77,12 @@ voices/                 — F:/PROJECTS/story-studio/voices/ in dev (not in repo
 | `voice:save-sample` | WebM → WAV (22050Hz mono) via FFmpeg |
 | `elevenlabs:clone-voice` | WebM → WAV (44100Hz) → POST /v1/voices/add → returns voiceId, writes to store |
 | `xtts:status` | Health check GET /health on port 5002 |
+| `characters:auto-discover` | LM Studio extracts named chars, generates portraits → returns `{added, skipped}` (does NOT save to store) |
+| `characters:save-batch` | Persist confirmed `[{name, imagePath, description}]` to electron-store (case-insensitive dedup) |
+| `character:regenerate-portrait` | Regenerate portrait for single char with updated description; overwrites file |
+| `character:add` | Add single character to library via file dialog |
+| `character:remove` | Remove character from library by name |
+| `character:list` | Return global character library array |
 
 ## IPC Events (main → renderer)
 - `video:progress` — `{ projectId, percent }` during export
@@ -115,7 +124,7 @@ daughters.daughter2: { ... }
 Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData/voices/` in production
 
 ## Rules
-- One paragraph = one scene/page (min 5, max 15)
+- One paragraph = one scene/page (min 5, max 25)
 - Languages: nl-NL and zh-CN
 - All file I/O through Electron IPC — never call Node APIs from React directly
 - React Query for async state, Zustand for UI state
@@ -221,6 +230,16 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - Check ALL daughters (`store.get('daughters')`) not just the narrator — narrator may not be the story character
 - After sending reference images, add a text part instructing Gemini: face/hair only from reference, adapt clothing and pose to scene action
 - Reference image guidance text must come BETWEEN the inlineData parts and the final prompt text
+
+## Character Library (added 2026-03-21)
+- Global character reference library stored in electron-store under key `characters`: `[{name, imagePath, description}]`
+- Portrait files: `voices/characters/{sanitized_name}_reference.png` (dev) or `userData/voices/characters/` (prod)
+- `sanitizeCharacterName(name)`: `name.replace(/[^a-zA-Z0-9\-_]/g, '_')` — used for all character filenames
+- `characters:auto-discover` no longer saves to store — returns results for user confirmation in Step 3 of wizard
+- `characters:save-batch` is the ONLY way characters are persisted (called from NewStoryModal Step 3 and SceneList Generate All)
+- NewStoryModal Step 3: spinner → offline error → 0-found message → portrait grid with editable name/description/regenerate/remove
+- React key for removable card lists: add `_key: \`${name}-${idx}\`` at discovery time; use `key={char._key}` NOT array index
+- Portrait cache busting: use React `key={bustKeys[i]}` increment on `<img>` — `localfile://` does NOT support query strings
 
 ## Next Steps / Known Improvements
 - Daughter 2 (Iris) profile configured — voice engine/voiceId still needs setup

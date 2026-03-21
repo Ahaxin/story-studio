@@ -4,7 +4,7 @@
 const { createScene } = require('./schema')
 
 const MIN_SCENES = 5
-const MAX_SCENES = 15
+const MAX_SCENES = 25
 const LONG_SCENE_WORD_THRESHOLD = 50
 const AVG_SECONDS_PER_SCENE = 8  // used for estimated video length
 
