@@ -312,7 +312,7 @@ export function useRemoveCharacter() {
 /**
  * Scan a project's story text, extract named characters via LM Studio,
  * and generate a portrait reference image for each new character.
- * On success, invalidates the character library query.
+ * Returns { added, skipped, warning? } — caller must call useSaveDiscoveredCharacters to persist.
  */
 export function useAutoDiscoverCharacters() {
   return useMutation({
