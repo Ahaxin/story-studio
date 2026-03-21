@@ -225,6 +225,7 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
     const sceneContent = `${scene.text} ${scene.illustrationPrompt || ''}`
     const refPaths = []
 
+    const narratorKey = scene.narrator || project.style.activeNarrator
     const allDaughters = store.get('daughters') || {}
     for (const d of Object.values(allDaughters)) {
       if (d?.characterReferencePath && d?.name && sceneContent.includes(d.name)) {
@@ -245,8 +246,23 @@ ipcMain.handle('scene:generate-illustration', async (event, { projectId, sceneId
 
     // Use existing/custom prompt if set by the user, otherwise auto-build
     if (!scene.illustrationPrompt || !scene.illustrationPrompt.trim()) {
-      const avatarPrompt = narrator?.avatarMode === 'generated' ? narrator.characterPrompt : ''
-      scene.illustrationPrompt = buildScenePrompt(scene.text, project.style, avatarPrompt, scene.index, project.name)
+      // Always pass narrator's characterPrompt (regardless of avatarMode) for visual consistency
+      const avatarPrompt = narrator?.characterPrompt || ''
+
+      // Build character descriptions for non-narrator daughters + library characters in this scene
+      const charDescriptions = []
+      for (const [key, d] of Object.entries(allDaughters)) {
+        if (key !== narratorKey && d?.name && d?.characterPrompt && sceneContent.includes(d.name)) {
+          charDescriptions.push({ name: d.name, description: d.characterPrompt })
+        }
+      }
+      for (const char of allCharacters) {
+        if (char.description && char.name && sceneContent.includes(char.name)) {
+          charDescriptions.push({ name: char.name, description: char.description })
+        }
+      }
+
+      scene.illustrationPrompt = buildScenePrompt(scene.text, project.style, avatarPrompt, scene.index, project.name, charDescriptions)
     }
     const prompt = scene.illustrationPrompt
 
@@ -523,7 +539,7 @@ ipcMain.handle('character:list', async () => {
 })
 
 // character:add — File dialog → copy image → append to character library
-ipcMain.handle('character:add', async (event, { name }) => {
+ipcMain.handle('character:add', async (event, { name, description = '' }) => {
   try {
     // Normalise name first — trim whitespace before all checks
     const trimmedName = (name || '').trim()
@@ -573,7 +589,7 @@ ipcMain.handle('character:add', async (event, { name }) => {
     if (freshExisting.some(c => c.name === trimmedName)) {
       return { success: false, error: 'A character with that name already exists' }
     }
-    const updated = [...freshExisting, { name: trimmedName, imagePath: destPath }]
+    const updated = [...freshExisting, { name: trimmedName, imagePath: destPath, description: description.trim() }]
     store.set('characters', updated)
 
     return { success: true, data: updated }

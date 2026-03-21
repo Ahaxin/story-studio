@@ -283,8 +283,8 @@ export function useCharacterList() {
 export function useAddCharacter() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ name }) => {
-      const res = await api.characterAdd({ name })
+    mutationFn: async ({ name, description = '' }) => {
+      const res = await api.characterAdd({ name, description })
       if (!res.success) throw new Error(res.error)
       return res.data  // updated array
     },

@@ -17,11 +17,12 @@ const NANO_BANANA_MODEL = 'gemini-3.1-flash-image-preview'
  *
  * @param {string} sceneText
  * @param {object} style — project.style
- * @param {string} avatarCharacterPrompt
+ * @param {string} avatarCharacterPrompt — narrator's physical description (always passed, not gated on avatarMode)
  * @param {number} sceneIndex — 0-based; 0 = cover page
  * @param {string} storyTitle — used on the cover
+ * @param {Array<{name: string, description: string}>} characters — additional named characters with locked appearances
  */
-function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneIndex = 0, storyTitle = '') {
+function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneIndex = 0, storyTitle = '', characters = []) {
   const artStyle = style?.illustrationStyle ||
     "watercolor children's book, soft pastel colors, friendly"
 
@@ -61,8 +62,25 @@ function buildScenePrompt(sceneText, style, avatarCharacterPrompt = '', sceneInd
       'wide landscape scene, characters and setting clearly visible',
     ]
 
+    // Character consistency block — every named character gets a locked appearance description.
+    // Gemini must keep face, hair, and skin tone identical across all scenes;
+    // only pose, expression, and clothing adapt to the scene action.
+    const charBlocks = []
     if (avatarCharacterPrompt && avatarCharacterPrompt.trim()) {
-      parts.push(avatarCharacterPrompt.trim())
+      charBlocks.push(avatarCharacterPrompt.trim())
+    }
+    for (const char of characters) {
+      if (char.description && char.description.trim()) {
+        charBlocks.push(`${char.name}: ${char.description.trim()}`)
+      }
+    }
+    if (charBlocks.length > 0) {
+      parts.push(
+        'IMPORTANT — character appearance must stay IDENTICAL across every scene ' +
+        '(same face shape, eye color, hair color and style, skin tone, body proportions). ' +
+        'Only the pose, expression, and clothing change to match the scene action. ' +
+        'Characters: ' + charBlocks.join(' | ')
+      )
     }
 
     const sceneSummary = sceneText.length > 200

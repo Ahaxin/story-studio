@@ -442,6 +442,7 @@ function CharacterReferencesSection() {
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newDescription, setNewDescription] = useState('')
   const [addError, setAddError] = useState('')
   const [removingName, setRemovingName] = useState(null)
 
@@ -450,8 +451,9 @@ function CharacterReferencesSection() {
     setAddError('')
     addCharacter.reset()
     try {
-      await addCharacter.mutateAsync({ name: newName.trim() })
+      await addCharacter.mutateAsync({ name: newName.trim(), description: newDescription.trim() })
       setNewName('')
+      setNewDescription('')
       setShowAddForm(false)
     } catch (err) {
       // Suppress "No file selected" — user cancelled the dialog, keep form open
@@ -517,6 +519,16 @@ function CharacterReferencesSection() {
             autoFocus
             className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 focus:border-story-purple focus:outline-none"
           />
+          <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mt-1">
+            Appearance Description <span className="text-gray-400 font-normal normal-case">(optional — keeps character consistent across scenes)</span>
+          </label>
+          <textarea
+            value={newDescription}
+            onChange={e => setNewDescription(e.target.value)}
+            placeholder="e.g. elderly woman with white curly hair, kind brown eyes, wearing a floral apron"
+            rows={2}
+            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 focus:border-story-purple focus:outline-none resize-none"
+          />
           {addError && (
             <p className="text-xs text-red-500">{addError}</p>
           )}
@@ -529,7 +541,7 @@ function CharacterReferencesSection() {
               {addCharacter.isPending ? 'Selecting…' : '🖼 Choose Image'}
             </button>
             <button
-              onClick={() => { setShowAddForm(false); setNewName(''); setAddError(''); addCharacter.reset() }}
+              onClick={() => { setShowAddForm(false); setNewName(''); setNewDescription(''); setAddError(''); addCharacter.reset() }}
               className="px-4 py-2 rounded-xl border-2 border-gray-200 text-sm font-bold text-gray-500 hover:border-gray-300 transition-colors"
             >
               Cancel
@@ -550,19 +562,26 @@ function CharacterReferencesSection() {
 
 function CharacterCard({ character, onRemove, isRemoving }) {
   return (
-    <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-2 border border-gray-100">
+    <div className="flex items-start gap-2 bg-gray-50 rounded-xl p-2 border border-gray-100">
       {character.imagePath && (
         <img
           src={`localfile:///${character.imagePath.replace(/\\/g, '/')}`}
           alt={character.name}
-          className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-200"
+          className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-gray-200 mt-0.5"
         />
       )}
-      <span className="flex-1 text-sm font-bold text-gray-700 truncate">{character.name}</span>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-bold text-gray-700 truncate block">{character.name}</span>
+        {character.description && (
+          <p className="text-xs text-gray-400 truncate mt-0.5" title={character.description}>
+            {character.description}
+          </p>
+        )}
+      </div>
       <button
         onClick={onRemove}
         disabled={isRemoving}
-        className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none disabled:opacity-40 flex-shrink-0"
+        className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none disabled:opacity-40 flex-shrink-0 mt-0.5"
         title="Remove character"
       >
         ×
