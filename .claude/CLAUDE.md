@@ -235,9 +235,9 @@ Voice sample WAVs saved to: `F:/PROJECTS/story-studio/voices/` in dev, `userData
 - Global character reference library stored in electron-store under key `characters`: `[{name, imagePath, description}]`
 - Portrait files: `voices/characters/{sanitized_name}_reference.png` (dev) or `userData/voices/characters/` (prod)
 - `sanitizeCharacterName(name)`: `name.replace(/[^a-zA-Z0-9\-_]/g, '_')` — used for all character filenames
-- `characters:auto-discover` no longer saves to store — returns results for user confirmation in Step 3 of wizard
-- `characters:save-batch` is the ONLY way characters are persisted (called from NewStoryModal Step 3 and SceneList Generate All)
-- NewStoryModal Step 3: spinner → offline error → 0-found message → portrait grid with editable name/description/regenerate/remove
+- `characters:auto-discover` returns ALL found characters with `alreadySaved: boolean` — existing library entries reuse imagePath (no portrait API call); new ones generate portrait
+- `characters:save-batch` is the ONLY persistence path (Step 3 saves only `!alreadySaved` cards; SceneList Generate All saves new ones)
+- NewStoryModal Step 3: spinner → offline error → 0-found message → portrait grid (all characters, new + existing); existing cards show green border + "✓ In library" badge
 - React key for removable card lists: add `_key: \`${name}-${idx}\`` at discovery time; use `key={char._key}` NOT array index
 - Portrait cache busting: use React `key={bustKeys[i]}` increment on `<img>` — `localfile://` does NOT support query strings
 
